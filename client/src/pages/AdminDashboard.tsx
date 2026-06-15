@@ -143,7 +143,7 @@ export function AdminDashboard() {
                 id="f"
                 ref={fileInput}
                 type="file"
-                accept="application/pdf"
+                accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,image/avif"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
               <p className="text-xs text-muted-foreground">

@@ -132,18 +132,34 @@ describe("REST API", () => {
     expect(started.playing).toBe(true);
   });
 
-  it("rejects a non-PDF upload with 400", async () => {
+  it("rejects an unsupported upload type with 400", async () => {
     const cookie = await login();
     const { body } = await createSession(cookie);
 
     const form = new FormData();
-    form.append("pdf", new Blob(["not a pdf"], { type: "text/plain" }), "evil.txt");
+    form.append("pdf", new Blob(["not allowed"], { type: "text/plain" }), "evil.txt");
     const res = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
       method: "POST",
       headers: { Cookie: cookie },
       body: form,
     });
     expect(res.status).toBe(400);
+  });
+
+  it("accepts an image upload and stores it with the right extension", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie);
+
+    const form = new FormData();
+    form.append("pdf", new Blob(["\x89PNG\r\n"], { type: "image/png" }), "score.png");
+    const updated = await json(
+      await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+        method: "POST",
+        headers: { Cookie: cookie },
+        body: form,
+      })
+    );
+    expect(updated.pdfUrl).toMatch(/^\/uploads\/.+\.png$/);
   });
 });
 

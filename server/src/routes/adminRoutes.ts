@@ -2,7 +2,6 @@ import { Router } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
-import { extname } from "node:path";
 import { env } from "../env.js";
 import { checkPassword, requireAdmin } from "../auth.js";
 import {
@@ -22,16 +21,27 @@ import {
 
 export const adminRouter = Router();
 
-// ---- Upload setup (admin only, PDF only, random safe filename) ----
+// ---- Upload setup (admin only; PDF or image; random safe filename) ----
 if (!existsSync(env.UPLOAD_DIR)) {
   mkdirSync(env.UPLOAD_DIR, { recursive: true });
 }
 
+// Allowed upload types -> the extension we store them under. The stored name is
+// always a random UUID + this extension (never the client filename), so it is
+// path-traversal safe and serves with the correct Content-Type.
+const ALLOWED_TYPES: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/avif": ".avif",
+};
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, env.UPLOAD_DIR),
   filename: (_req, file, cb) => {
-    // Random name — never trust the client filename (path traversal safe).
-    const ext = extname(file.originalname).toLowerCase() === ".pdf" ? ".pdf" : ".pdf";
+    const ext = ALLOWED_TYPES[file.mimetype] ?? ".bin";
     cb(null, `${randomUUID()}${ext}`);
   },
 });
@@ -40,10 +50,7 @@ const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
   fileFilter: (_req, file, cb) => {
-    const isPdf =
-      file.mimetype === "application/pdf" &&
-      extname(file.originalname).toLowerCase() === ".pdf";
-    cb(null, isPdf);
+    cb(null, file.mimetype in ALLOWED_TYPES);
   },
 });
 

@@ -12,6 +12,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 // warnings from PDF.js. Module-level constant so react-pdf doesn't reload.
 const DOCUMENT_OPTIONS = { verbosity: pdfjs.VerbosityLevel.ERRORS };
 
+const IMAGE_RE = /\.(png|jpe?g|webp|gif|avif)$/i;
+
 export type PdfViewerHandle = {
   /** Scroll the container to a normalized progress (0..1). */
   scrollToProgress: (progress: number) => void;
@@ -83,6 +85,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   }, [onUserScroll]);
 
   const placeholder = "flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground";
+  const isImage = IMAGE_RE.test(fileUrl);
 
   return (
     <div
@@ -91,7 +94,17 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       onScroll={handleScroll}
     >
       {error ? (
-        <div className={placeholder}>PDF konnte nicht geladen werden.</div>
+        <div className={placeholder}>Datei konnte nicht geladen werden.</div>
+      ) : isImage ? (
+        <div className="flex flex-col items-center px-2 pb-[55vh] pt-3 sm:px-4">
+          <img
+            src={fileUrl}
+            alt=""
+            style={{ width: pageWidth }}
+            onError={() => setError("image")}
+            className="h-auto rounded-lg shadow-[var(--shadow-lift)]"
+          />
+        </div>
       ) : (
         <Document
           file={fileUrl}

@@ -31,13 +31,9 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   app.use("/api", publicRouter);
   app.use("/api/admin", adminRouter);
 
-  // Uploaded PDFs (read-only static serving)
-  app.use(
-    "/uploads",
-    express.static(env.UPLOAD_DIR, {
-      setHeaders: (res) => res.setHeader("Content-Type", "application/pdf"),
-    })
-  );
+  // Uploaded files (PDF or image), read-only. Content-Type is inferred from the
+  // stored extension by express.static.
+  app.use("/uploads", express.static(env.UPLOAD_DIR));
 
   // Serve the built React app in production (client dist copied into the image).
   const clientDist = resolve(process.cwd(), "../client/dist");

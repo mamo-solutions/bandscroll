@@ -177,7 +177,7 @@ export function AdminSessionControl() {
           <input
             ref={pdfInput}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,image/avif"
             className="hidden"
             onChange={changePdf}
           />
