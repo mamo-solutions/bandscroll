@@ -1,5 +1,6 @@
 import { Pause, Play, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type Props = {
   connected: boolean;
@@ -8,6 +9,7 @@ type Props = {
 
 /** Compact, self-explaining connection + playback indicator (icon + text). */
 export function ConnectionStatus({ connected, playing }: Props) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-2 text-xs font-medium sm:text-sm">
       <span
@@ -19,7 +21,7 @@ export function ConnectionStatus({ connected, playing }: Props) {
         )}
       >
         {connected ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
-        {connected ? "Verbunden" : "Getrennt"}
+        {connected ? t("conn.connected") : t("conn.disconnected")}
       </span>
 
       {connected && (
@@ -30,7 +32,7 @@ export function ConnectionStatus({ connected, playing }: Props) {
           )}
         >
           {playing ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-          {playing ? "Läuft" : "Pausiert"}
+          {playing ? t("conn.playing") : t("conn.paused")}
         </span>
       )}
     </div>

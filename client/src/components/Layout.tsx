@@ -1,6 +1,6 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { AudioLines } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Footer } from "@/components/Footer";
 
 export function Layout() {
   return (
@@ -14,36 +14,14 @@ export function Layout() {
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
               <AudioLines className="size-5" />
             </span>
-            play-a-sync
+            BandScroll
           </Link>
-
-          <nav className="flex items-center gap-1 text-sm">
-            <HeaderLink to="/">Sessions</HeaderLink>
-            <HeaderLink to="/admin">Host</HeaderLink>
-          </nav>
         </div>
       </header>
 
       <Outlet />
-    </div>
-  );
-}
 
-function HeaderLink({ to, children }: { to: string; children: React.ReactNode }) {
-  return (
-    <NavLink
-      to={to}
-      end={to === "/"}
-      className={({ isActive }) =>
-        cn(
-          "rounded-lg px-3 py-2 font-medium transition-colors",
-          isActive
-            ? "bg-secondary text-secondary-foreground"
-            : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-        )
-      }
-    >
-      {children}
-    </NavLink>
+      <Footer />
+    </div>
   );
 }

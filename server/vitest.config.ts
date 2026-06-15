@@ -11,7 +11,7 @@ export default defineConfig({
       NODE_ENV: "test",
       ADMIN_PASSWORD: "test-password-123",
       ADMIN_SESSION_SECRET: "test-session-secret-which-is-long-enough",
-      UPLOAD_DIR: join(tmpdir(), "play-a-sync-test-uploads"),
+      UPLOAD_DIR: join(tmpdir(), "bandscroll-test-uploads"),
       PUBLIC_BASE_URL: "http://localhost:3000",
     },
     // Socket.IO integration tests share a module-level store/io singleton, so

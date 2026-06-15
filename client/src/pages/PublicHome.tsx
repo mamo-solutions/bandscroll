@@ -6,12 +6,14 @@ import { getSocket } from "@/sockets/socket";
 import { PublicSessionList } from "@/components/PublicSessionList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/i18n/I18nProvider";
 import type { SessionState } from "@/types/session";
 
 export function PublicHome() {
   const [sessions, setSessions] = useState<SessionState[]>([]);
   const [code, setCode] = useState("");
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const load = () => {
     api
@@ -41,11 +43,10 @@ export function PublicHome() {
       {/* Hero + single primary action: join */}
       <section className="mx-auto mb-10 max-w-2xl text-center sm:mb-14">
         <h1 className="text-balance font-heading text-3xl font-bold tracking-tight sm:text-4xl">
-          Folge der Session in Echtzeit
+          {t("home.heroTitle")}
         </h1>
         <p className="mx-auto mt-3 max-w-md text-pretty text-muted-foreground">
-          Das PDF scrollt automatisch synchron zum Host. Tritt einer offenen
-          Session bei oder gib deinen Code ein.
+          {t("home.heroSubtitle")}
         </p>
 
         <form
@@ -57,15 +58,15 @@ export function PublicHome() {
             <Input
               inputMode="text"
               autoCapitalize="characters"
-              placeholder="Code, z. B. SESSION-7421"
+              placeholder={t("home.codePlaceholder")}
               value={code}
               onChange={(e) => setCode(e.target.value)}
               className="pl-9 font-mono tracking-wide"
-              aria-label="Session-Code"
+              aria-label={t("home.codeAria")}
             />
           </div>
           <Button type="submit" size="lg" className="sm:w-auto">
-            Beitreten
+            {t("common.join")}
             <ArrowRight />
           </Button>
         </form>
@@ -73,9 +74,11 @@ export function PublicHome() {
 
       <section>
         <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="font-heading text-xl font-semibold">Offene Sessions</h2>
+          <h2 className="font-heading text-xl font-semibold">
+            {t("home.openSessions")}
+          </h2>
           <span className="text-sm text-muted-foreground">
-            {sessions.length} aktiv
+            {t("home.activeCount", { count: sessions.length })}
           </span>
         </div>
         <PublicSessionList sessions={sessions} />

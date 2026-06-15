@@ -1,4 +1,4 @@
-# PDF Sync Stage
+# BandScroll
 
 Eine selbst hostbare **React-PWA**, mit der das PDF-Scrolling einer Live-Session
 in Echtzeit über WebSockets synchronisiert wird. Eine Band, ein Dirigent oder
@@ -243,7 +243,7 @@ Admin (Cookie nötig): `POST /api/admin/login|logout`, `GET /api/admin/me`,
 ## Projektstruktur
 
 ```
-play-a-sync/
+bandscroll/
 ├── client/          # React + Vite PWA
 │   └── src/{api,sockets,types,components,pages}
 ├── server/          # Express + Socket.IO

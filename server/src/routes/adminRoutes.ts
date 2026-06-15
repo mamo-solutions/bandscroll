@@ -109,7 +109,13 @@ adminRouter.post("/sessions/:id/pdf", upload.single("pdf"), (req, res) => {
     return;
   }
   const pdfUrl = `/uploads/${req.file.filename}`;
-  const updated = updateSessionState(session.id, { pdfUrl });
+  // A new document means a new song: reset to the top and pause so viewers
+  // don't keep extrapolating the previous song's scroll position.
+  const updated = updateSessionState(session.id, {
+    pdfUrl,
+    progress: 0,
+    playing: false,
+  });
   if (updated) {
     broadcastSessionState(updated);
     broadcastSessionListUpdated();

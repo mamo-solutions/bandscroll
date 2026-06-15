@@ -19,8 +19,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "play-a-sync",
-        short_name: "play-a-sync",
+        name: "BandScroll",
+        short_name: "BandScroll",
         description: "Realtime synchronized PDF scrolling for live sessions",
         theme_color: "#fdf8f3",
         background_color: "#fdf8f3",

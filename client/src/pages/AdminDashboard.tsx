@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useI18n } from "@/i18n/I18nProvider";
 import type { SessionState } from "@/types/session";
 
 export function AdminDashboard() {
@@ -35,6 +36,7 @@ export function AdminDashboard() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const load = () =>
     api
@@ -64,7 +66,7 @@ export function AdminDashboard() {
       if (fileInput.current) fileInput.current.value = "";
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Fehler beim Erstellen");
+      setError(err instanceof ApiError ? err.message : t("dash.createError"));
     } finally {
       setBusy(false);
     }
@@ -88,15 +90,17 @@ export function AdminDashboard() {
   }
 
   async function deleteSession(id: string) {
-    if (confirm("Session wirklich löschen? Das kann nicht rückgängig gemacht werden."))
-      await api.deleteSession(id).then(load);
+    if (confirm(t("dash.deleteConfirm"))) await api.deleteSession(id).then(load);
   }
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
       <AdminNav
-        title="Dashboard"
-        subtitle={`${sessions.length} ${sessions.length === 1 ? "Session" : "Sessions"} verwaltet`}
+        title={t("dash.title")}
+        subtitle={t(
+          sessions.length === 1 ? "dash.subtitleOne" : "dash.subtitleOther",
+          { count: sessions.length }
+        )}
         showDashboard={false}
       />
 
@@ -105,34 +109,34 @@ export function AdminDashboard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Plus className="size-5 text-primary" />
-            Neue Session
+            {t("dash.newSession")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
               <Label htmlFor="t">
-                Titel <span className="text-destructive">*</span>
+                {t("dash.titleLabel")} <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="t"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="z. B. Konzert – Set 1"
+                placeholder={t("dash.titlePlaceholder")}
                 required
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="d">Beschreibung</Label>
+              <Label htmlFor="d">{t("dash.descriptionLabel")}</Label>
               <Input
                 id="d"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional"
+                placeholder={t("dash.optional")}
               />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2">
-              <Label htmlFor="f">PDF hochladen</Label>
+              <Label htmlFor="f">{t("dash.uploadPdf")}</Label>
               <Input
                 id="f"
                 ref={fileInput}
@@ -141,7 +145,7 @@ export function AdminDashboard() {
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
               <p className="text-xs text-muted-foreground">
-                Optional, nur PDF, max. 50 MB. Kann auch später hinzugefügt werden.
+                {t("dash.uploadHint")}
               </p>
             </div>
 
@@ -158,7 +162,7 @@ export function AdminDashboard() {
             <div className="sm:col-span-2">
               <Button type="submit" disabled={busy || !title.trim()}>
                 {busy ? <Loader2 className="animate-spin" /> : <FileUp />}
-                {busy ? "Erstelle…" : "Session erstellen"}
+                {busy ? t("dash.creating") : t("dash.create")}
               </Button>
             </div>
           </form>
@@ -166,10 +170,12 @@ export function AdminDashboard() {
       </Card>
 
       {/* List */}
-      <h2 className="mb-4 font-heading text-xl font-semibold">Alle Sessions</h2>
+      <h2 className="mb-4 font-heading text-xl font-semibold">
+        {t("dash.allSessions")}
+      </h2>
       {sessions.length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">
-          Noch keine Sessions. Erstelle oben deine erste.
+          {t("dash.empty")}
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -192,14 +198,14 @@ export function AdminDashboard() {
                   }`}
                 >
                   <FileCheck2 className="size-3.5" />
-                  {s.pdfUrl ? "PDF bereit" : "Kein PDF"}
+                  {s.pdfUrl ? t("dash.pdfReady") : t("dash.noPdf")}
                 </span>
               </div>
 
               <div className="mt-auto flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => navigate(`/admin/session/${s.id}`)}>
                   <Settings2 />
-                  Steuern
+                  {t("dash.control")}
                 </Button>
                 <Button
                   variant="outline"
@@ -209,12 +215,12 @@ export function AdminDashboard() {
                   {copiedId === s.id ? (
                     <>
                       <Check className="text-success" />
-                      Kopiert
+                      {t("dash.copied")}
                     </>
                   ) : (
                     <>
                       <Link2 />
-                      Link
+                      {t("dash.link")}
                     </>
                   )}
                 </Button>
@@ -225,7 +231,7 @@ export function AdminDashboard() {
                     onClick={() => endSession(s.id)}
                   >
                     <CircleSlash />
-                    Beenden
+                    {t("dash.end")}
                   </Button>
                 )}
                 <Button
@@ -233,7 +239,7 @@ export function AdminDashboard() {
                   size="sm"
                   className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => deleteSession(s.id)}
-                  aria-label="Session löschen"
+                  aria-label={t("dash.deleteAria")}
                 >
                   <Trash2 />
                 </Button>

@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useI18n } from "@/i18n/I18nProvider";
 
 export function AdminLogin() {
   const [password, setPassword] = useState("");
@@ -19,6 +20,7 @@ export function AdminLogin() {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   useEffect(() => {
     auth.me().then((ok) => ok && navigate("/admin", { replace: true }));
@@ -42,15 +44,13 @@ export function AdminLogin() {
           <span className="mb-1 flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
             <Lock className="size-6" />
           </span>
-          <CardTitle className="text-2xl">Host-Anmeldung</CardTitle>
-          <CardDescription>
-            Geschützter Bereich für Dirigent:innen und Hosts.
-          </CardDescription>
+          <CardTitle className="text-2xl">{t("login.title")}</CardTitle>
+          <CardDescription>{t("login.desc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="pw">Passwort</Label>
+              <Label htmlFor="pw">{t("login.password")}</Label>
               <div className="relative">
                 <Input
                   id="pw"
@@ -66,7 +66,7 @@ export function AdminLogin() {
                   type="button"
                   onClick={() => setShow((v) => !v)}
                   className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={show ? "Passwort verbergen" : "Passwort anzeigen"}
+                  aria-label={show ? t("login.hidePassword") : t("login.showPassword")}
                 >
                   {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -79,13 +79,13 @@ export function AdminLogin() {
                 className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
               >
                 <AlertCircle className="size-4 shrink-0" />
-                Falsches Passwort. Bitte erneut versuchen.
+                {t("login.error")}
               </p>
             )}
 
             <Button type="submit" size="lg" disabled={busy || !password}>
               {busy && <Loader2 className="animate-spin" />}
-              {busy ? "Prüfe…" : "Anmelden"}
+              {busy ? t("login.checking") : t("login.submit")}
             </Button>
           </form>
         </CardContent>

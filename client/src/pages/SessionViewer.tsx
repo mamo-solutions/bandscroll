@@ -6,10 +6,12 @@ import { getSocket } from "@/sockets/socket";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n/I18nProvider";
 import { effectiveProgress, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
   const { code = "" } = useParams();
+  const { t } = useI18n();
   const [session, setSession] = useState<SessionState | null>(null);
   const [connected, setConnected] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -101,15 +103,16 @@ export function SessionViewer() {
         <span className="flex size-14 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
           <FileX2 className="size-7" />
         </span>
-        <h1 className="font-heading text-2xl font-bold">Session nicht gefunden</h1>
+        <h1 className="font-heading text-2xl font-bold">
+          {t("viewer.notFoundTitle")}
+        </h1>
         <p className="text-muted-foreground">
-          Der Code <span className="font-mono font-semibold">{code}</span>{" "}
-          existiert nicht oder die Session wurde beendet.
+          {t("viewer.notFoundDesc", { code })}
         </p>
         <Button asChild variant="secondary">
           <Link to="/">
             <ArrowLeft />
-            Zur Übersicht
+            {t("common.backToOverview")}
           </Link>
         </Button>
       </main>
@@ -129,7 +132,7 @@ export function SessionViewer() {
               variant="ghost"
               size="icon"
               className="h-9 w-9 shrink-0"
-              aria-label="Zurück zur Übersicht"
+              aria-label={t("viewer.backAria")}
             >
               <Link to="/">
                 <ArrowLeft />
@@ -137,7 +140,7 @@ export function SessionViewer() {
             </Button>
             <div className="min-w-0">
               <p className="truncate font-heading font-semibold leading-tight">
-                {session?.title ?? "Lädt…"}
+                {session?.title ?? t("viewer.loading")}
               </p>
               <span className="font-mono text-xs text-muted-foreground">{code}</span>
             </div>
@@ -159,12 +162,12 @@ export function SessionViewer() {
         <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6">
           {ended && (
             <Banner tone="muted" icon={<OctagonX className="size-4" />}>
-              Diese Session wurde vom Host beendet.
+              {t("viewer.endedBanner")}
             </Banner>
           )}
           {!connected && (
             <Banner tone="warning" icon={<Loader2 className="size-4 animate-spin" />}>
-              Verbindung verloren – versuche neu zu verbinden…
+              {t("viewer.reconnecting")}
             </Banner>
           )}
         </div>
@@ -174,11 +177,10 @@ export function SessionViewer() {
       <div className="relative mx-auto w-full max-w-6xl flex-1 px-2 py-3 sm:px-6">
         <div className="h-full overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-soft)]">
           {pdfUrl ? (
-            <PdfViewer ref={viewerRef} fileUrl={pdfUrl} />
+            <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
           ) : (
             <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
-              Der Host hat noch kein PDF hinterlegt. Sobald es bereitsteht,
-              erscheint es automatisch.
+              {t("viewer.noPdf")}
             </div>
           )}
         </div>

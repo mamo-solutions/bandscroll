@@ -1,5 +1,5 @@
 {
-  "name": "play-a-sync-server",
+  "name": "bandscroll-server",
   "version": "1.0.0",
   "private": true,
   "type": "module",

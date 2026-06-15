@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { FileWarning, Loader2 } from "lucide-react";
+import { FileUp, FileWarning, Loader2, RefreshCw } from "lucide-react";
 import { api } from "@/api/client";
 import { getSocket } from "@/sockets/socket";
 import { AdminNav } from "@/components/AdminNav";
@@ -8,18 +8,23 @@ import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { SessionStatusBadge } from "@/components/SessionStatusBadge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useI18n } from "@/i18n/I18nProvider";
 import { effectiveProgress, type SessionState } from "@/types/session";
 
 export function AdminSessionControl() {
   const { id = "" } = useParams();
+  const { t } = useI18n();
   const [session, setSession] = useState<SessionState | null>(null);
   const [connected, setConnected] = useState(false);
   const [uiProgress, setUiProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
+  const pdfInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     stateRef.current = session;
@@ -129,11 +134,28 @@ export function AdminSessionControl() {
     socket.emit("admin-set-speed", { sessionId: id, speed });
   }
 
+  // Swap the PDF mid-session (e.g. choose another song). The server resets
+  // progress + pauses and broadcasts, so all viewers reload the new document.
+  async function changePdf(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    setUploading(true);
+    try {
+      const updated = await api.uploadPdf(id, file);
+      liveProgressRef.current = 0;
+      setUiProgress(0);
+      setSession(updated);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   if (!session) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
         <Loader2 className="size-6 animate-spin" />
-        <p className="text-sm">Session wird geladen…</p>
+        <p className="text-sm">{t("control.loading")}</p>
       </main>
     );
   }
@@ -147,8 +169,36 @@ export function AdminSessionControl() {
           {session.code}
         </span>
         <SessionStatusBadge status={session.status} />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <ConnectionStatus connected={connected} playing={session.playing} />
+          <input
+            ref={pdfInput}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={changePdf}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={() => pdfInput.current?.click()}
+          >
+            {uploading ? (
+              <Loader2 className="animate-spin" />
+            ) : session.pdfUrl ? (
+              <RefreshCw />
+            ) : (
+              <FileUp />
+            )}
+            <span className="hidden sm:inline">
+              {uploading
+                ? t("control.uploading")
+                : session.pdfUrl
+                  ? t("control.changePdf")
+                  : t("control.addPdf")}
+            </span>
+          </Button>
         </div>
       </div>
 
@@ -157,6 +207,7 @@ export function AdminSessionControl() {
         <div className="h-[48vh] sm:h-[58vh]">
           {session.pdfUrl ? (
             <PdfViewer
+              key={session.pdfUrl}
               ref={viewerRef}
               fileUrl={session.pdfUrl}
               onUserScroll={(p) => {
@@ -166,8 +217,8 @@ export function AdminSessionControl() {
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
               <FileWarning className="size-7" />
-              <p className="font-medium">Kein PDF hochgeladen</p>
-              <p className="text-sm">Lade im Dashboard ein PDF zu dieser Session hoch.</p>
+              <p className="font-medium">{t("control.noPdfTitle")}</p>
+              <p className="text-sm">{t("control.noPdfDesc")}</p>
             </div>
           )}
         </div>

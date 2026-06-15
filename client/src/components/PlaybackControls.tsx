@@ -13,12 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/I18nProvider";
+import type { TKey } from "@/i18n/translations";
 import type { SessionState } from "@/types/session";
 
-const SPEED_PRESETS = [
-  { label: "Langsam", value: 0.0005 },
-  { label: "Mittel", value: 0.001 },
-  { label: "Schnell", value: 0.002 },
+const SPEED_PRESETS: { key: TKey; value: number }[] = [
+  { key: "controls.slow", value: 0.0005 },
+  { key: "controls.medium", value: 0.001 },
+  { key: "controls.fast", value: 0.002 },
 ];
 
 type Props = {
@@ -46,6 +48,7 @@ export function PlaybackControls({
   onSeek,
   onSeekToCurrent,
 }: Props) {
+  const { t } = useI18n();
   const [duration, setDuration] = useState("");
 
   function applyDuration() {
@@ -61,22 +64,22 @@ export function PlaybackControls({
     <div className="flex flex-col gap-5">
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat icon={<Timer className="size-4" />} label="Fortschritt">
+        <Stat icon={<Timer className="size-4" />} label={t("controls.progress")}>
           {(liveProgress * 100).toFixed(1)}%
         </Stat>
-        <Stat icon={<Gauge className="size-4" />} label="Tempo">
+        <Stat icon={<Gauge className="size-4" />} label={t("controls.tempo")}>
           {session.speed.toFixed(4)}
         </Stat>
         <Stat
           icon={
             session.playing ? <Play className="size-4" /> : <Pause className="size-4" />
           }
-          label="Status"
+          label={t("controls.status")}
           tone={session.playing ? "success" : "warning"}
         >
-          {session.playing ? "Läuft" : "Pause"}
+          {session.playing ? t("conn.playing") : t("controls.pause")}
         </Stat>
-        <Stat icon={<Users className="size-4" />} label="Zuschauer">
+        <Stat icon={<Users className="size-4" />} label={t("controls.viewers")}>
           {connectedClients}
         </Stat>
       </div>
@@ -84,7 +87,7 @@ export function PlaybackControls({
       {/* Seek */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-          <span>Position</span>
+          <span>{t("controls.position")}</span>
           <span className="tabular-nums">{(liveProgress * 100).toFixed(0)}%</span>
         </div>
         <Slider
@@ -93,7 +96,7 @@ export function PlaybackControls({
           max={1000}
           step={1}
           onValueChange={([v]) => onSeek(v / 1000)}
-          aria-label="Position der Session"
+          aria-label={t("controls.positionAria")}
         />
       </div>
 
@@ -102,25 +105,25 @@ export function PlaybackControls({
         {session.playing ? (
           <Button variant="warning" size="lg" onClick={onPause}>
             <Pause />
-            Pause
+            {t("controls.pause")}
           </Button>
         ) : (
           <Button variant="success" size="lg" onClick={onPlay}>
             <Play />
-            Play
+            {t("controls.play")}
           </Button>
         )}
         <Button variant="outline" size="lg" onClick={onStop}>
           <Square />
-          Stop
+          {t("controls.stop")}
         </Button>
         <Button variant="outline" size="lg" onClick={onRestart}>
           <SkipBack />
-          Anfang
+          {t("controls.startOver")}
         </Button>
         <Button variant="secondary" size="lg" onClick={onSeekToCurrent}>
           <Crosshair />
-          Hierher
+          {t("controls.here")}
         </Button>
       </div>
 
@@ -128,7 +131,7 @@ export function PlaybackControls({
       <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">
           <span className="text-xs font-medium text-muted-foreground">
-            Geschwindigkeit
+            {t("controls.speed")}
           </span>
           <div className="inline-flex rounded-lg bg-muted p-1">
             {SPEED_PRESETS.map((p) => (
@@ -142,7 +145,7 @@ export function PlaybackControls({
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {p.label}
+                {t(p.key)}
               </button>
             ))}
           </div>
@@ -154,21 +157,21 @@ export function PlaybackControls({
               htmlFor="dur"
               className="text-xs font-medium text-muted-foreground"
             >
-              Songdauer (Sek.)
+              {t("controls.duration")}
             </label>
             <Input
               id="dur"
               type="number"
               min={1}
               inputMode="numeric"
-              placeholder="z. B. 180"
+              placeholder={t("controls.durationPlaceholder")}
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
               className="w-32"
             />
           </div>
           <Button variant="outline" onClick={applyDuration}>
-            Übernehmen
+            {t("controls.apply")}
           </Button>
         </div>
       </div>

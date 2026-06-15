@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, LogOut } from "lucide-react";
 import { auth } from "@/api/auth";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n/I18nProvider";
 
 export function AdminNav({
   title,
@@ -13,6 +14,7 @@ export function AdminNav({
   showDashboard?: boolean;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   async function handleLogout() {
     await auth.logout();
@@ -33,12 +35,12 @@ export function AdminNav({
         {showDashboard && (
           <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
             <LayoutDashboard />
-            <span className="hidden sm:inline">Dashboard</span>
+            <span className="hidden sm:inline">{t("nav.dashboard")}</span>
           </Button>
         )}
         <Button variant="ghost" size="sm" onClick={handleLogout}>
           <LogOut />
-          <span className="hidden sm:inline">Abmelden</span>
+          <span className="hidden sm:inline">{t("nav.logout")}</span>
         </Button>
       </div>
     </div>

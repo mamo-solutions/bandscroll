@@ -225,4 +225,50 @@ describe("Socket.IO sync", () => {
     expect(fired).toBe(true);
     listener.close();
   });
+
+  it("swaps the PDF mid-session: resets progress, pauses, and notifies viewers", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Setlist");
+    const upload = async (name: string) => {
+      const form = new FormData();
+      form.append("pdf", new Blob(["%PDF-1.4"], { type: "application/pdf" }), name);
+      return json(
+        await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+          method: "POST",
+          headers: { Cookie: cookie },
+          body: form,
+        })
+      );
+    };
+
+    const first = await upload("song-a.pdf");
+    expect(first.pdfUrl).toMatch(/^\/uploads\/.+\.pdf$/);
+
+    // Advance into the first song, then a viewer joins.
+    await fetch(`${base}/api/admin/sessions/${body.id}/start`, {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    await fetch(`${base}/api/admin/sessions/${body.id}/seek`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ progress: 0.6 }),
+    });
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+
+    // Swap to the next song -> viewer must get the new url, progress 0, paused.
+    const swap = waitForState(viewer, (s) => s.pdfUrl !== first.pdfUrl);
+    const second = await upload("song-b.pdf");
+    const state = await swap;
+
+    expect(second.pdfUrl).not.toBe(first.pdfUrl);
+    expect(second.progress).toBe(0);
+    expect(second.playing).toBe(false);
+    expect(state.pdfUrl).toBe(second.pdfUrl);
+    expect(state.progress).toBe(0);
+
+    viewer.close();
+  });
 });

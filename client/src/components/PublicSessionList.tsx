@@ -3,10 +3,12 @@ import { ArrowRight, Inbox } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SessionStatusBadge } from "@/components/SessionStatusBadge";
+import { useI18n } from "@/i18n/I18nProvider";
 import type { SessionState } from "@/types/session";
 
 export function PublicSessionList({ sessions }: { sessions: SessionState[] }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   if (sessions.length === 0) {
     return (
@@ -14,10 +16,9 @@ export function PublicSessionList({ sessions }: { sessions: SessionState[] }) {
         <span className="flex size-12 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
           <Inbox className="size-6" />
         </span>
-        <p className="font-medium">Gerade keine offenen Sessions</p>
+        <p className="font-medium">{t("list.emptyTitle")}</p>
         <p className="max-w-xs text-sm text-muted-foreground">
-          Sobald ein Host eine Session startet, erscheint sie hier
-          automatisch – oder tritt direkt über einen Code bei.
+          {t("list.emptyDesc")}
         </p>
       </Card>
     );
@@ -61,7 +62,7 @@ export function PublicSessionList({ sessions }: { sessions: SessionState[] }) {
                 navigate(`/session/${s.code}`);
               }}
             >
-              Beitreten
+              {t("common.join")}
               <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
             </Button>
           </div>

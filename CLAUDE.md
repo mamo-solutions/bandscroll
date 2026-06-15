@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`play-a-sync` — a self-hostable React PWA that synchronizes PDF auto-scroll of a live session over WebSockets. A host/conductor controls scroll progress; many read-only public clients follow in real time. Two npm packages, `client/` (React + Vite + TS) and `server/` (Express + Socket.IO + TS), plus root tooling.
+`BandScroll` — a self-hostable React PWA that synchronizes PDF auto-scroll of a live session over WebSockets. A host/conductor controls scroll progress; many read-only public clients follow in real time. Two npm packages, `client/` (React + Vite + TS) and `server/` (Express + Socket.IO + TS), plus root tooling.
 
 ## Commands
 
