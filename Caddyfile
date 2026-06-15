@@ -1,0 +1,20 @@
+# Local development / testing.
+# Caddy terminates TLS (self-signed for localhost) and proxies to the app.
+localhost {
+	reverse_proxy app:3000
+}
+
+# ---------------------------------------------------------------------------
+# Production: replace `localhost` above with your real domain. Caddy will then
+# automatically obtain and renew a Let's Encrypt certificate. Example:
+#
+# pdfsync.example.com {
+# 	reverse_proxy app:3000
+# }
+#
+# Make sure:
+#   - the domain's DNS A/AAAA record points at this server,
+#   - ports 80 and 443 are reachable from the internet,
+#   - PUBLIC_BASE_URL in .env is set to https://pdfsync.example.com,
+#   - NODE_ENV=production (so the session cookie is sent with `secure: true`).
+# ---------------------------------------------------------------------------

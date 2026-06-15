@@ -1,0 +1,134 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@500;600;700&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+  play-a-sync — warm pastel, soft-UI design system.
+  Light, calm, minimal. Terracotta/clay primary on a warm cream canvas,
+  soft peach/blush surfaces, sage = live/playing, amber = paused.
+*/
+:root {
+  --radius: 0.9rem;
+
+  --background: #fdf8f3;
+  --foreground: #3a322e;
+
+  --card: #fffdfb;
+  --card-foreground: #3a322e;
+
+  --popover: #fffdfb;
+  --popover-foreground: #3a322e;
+
+  --primary: #b1543f; /* clay terracotta — white text ≈ 4.96:1 */
+  --primary-foreground: #fffaf6;
+
+  --secondary: #f4e7df; /* soft blush surface */
+  --secondary-foreground: #6f5347;
+
+  --muted: #f3ece5;
+  --muted-foreground: #6f6058; /* secondary text ≈ 5.6:1 */
+
+  --accent: #f6e0cf; /* warm peach highlight */
+  --accent-foreground: #6f5347;
+
+  --success: #4f7a4d; /* sage — live / playing */
+  --success-foreground: #ffffff;
+  --warning: #b5792a; /* amber — paused */
+  --warning-foreground: #ffffff;
+  --destructive: #c0492f;
+  --destructive-foreground: #fff7f4;
+
+  --border: #ecdfd6;
+  --input: #e7d8cd;
+  --ring: #b1543f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: "Poppins", system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 0.4rem);
+  --radius-md: calc(var(--radius) - 0.2rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.4rem);
+
+  --shadow-soft: 0 1px 2px rgba(120, 80, 60, 0.04),
+    0 8px 24px -12px rgba(120, 70, 50, 0.18);
+  --shadow-lift: 0 2px 4px rgba(120, 80, 60, 0.06),
+    0 18px 40px -18px rgba(120, 70, 50, 0.28);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+  /* Visible focus for keyboard users everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Soft warm scrollbars */
+@layer utilities {
+  .scrollbar-warm {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  .scrollbar-warm::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scrollbar-warm::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 999px;
+    border: 2px solid var(--color-background);
+  }
+}

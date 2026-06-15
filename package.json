@@ -1,0 +1,18 @@
+{
+  "name": "play-a-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Realtime synchronized PDF scrolling for live sessions (PWA MVP)",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build && npm --prefix server run build",
+    "test": "npm --prefix server run test && npm --prefix client run test",
+    "start": "npm --prefix server run start",
+    "install:all": "npm --prefix server install && npm --prefix client install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

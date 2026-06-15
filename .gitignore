@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+uploads/*
+!uploads/.gitkeep
+caddy_data/
+caddy_config/
+*.log
+.DS_Store
