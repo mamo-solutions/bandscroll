@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { SessionState } from "@/types/session";
 
 export function AdminDashboard() {
@@ -37,6 +38,7 @@ export function AdminDashboard() {
   const fileInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { t } = useI18n();
+  useDocumentTitle(t("dash.title"));
 
   const load = () =>
     api

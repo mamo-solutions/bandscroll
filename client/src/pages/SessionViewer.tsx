@@ -7,6 +7,7 @@ import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { effectiveProgress, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
@@ -21,6 +22,8 @@ export function SessionViewer() {
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
   const displayedRef = useRef<number>(0);
+
+  useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
 
   useEffect(() => {
     stateRef.current = session;

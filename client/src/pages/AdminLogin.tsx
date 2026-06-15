@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 export function AdminLogin() {
   const [password, setPassword] = useState("");
@@ -21,6 +22,7 @@ export function AdminLogin() {
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
   const { t } = useI18n();
+  useDocumentTitle(t("login.title"));
 
   useEffect(() => {
     auth.me().then((ok) => ok && navigate("/admin", { replace: true }));

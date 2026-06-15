@@ -7,6 +7,7 @@ import { PublicSessionList } from "@/components/PublicSessionList";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { SessionState } from "@/types/session";
 
 export function PublicHome() {
@@ -14,6 +15,7 @@ export function PublicHome() {
   const [code, setCode] = useState("");
   const navigate = useNavigate();
   const { t } = useI18n();
+  useDocumentTitle();
 
   const load = () => {
     api

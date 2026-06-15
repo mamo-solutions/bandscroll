@@ -11,6 +11,7 @@ import { SessionStatusBadge } from "@/components/SessionStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { effectiveProgress, type SessionState } from "@/types/session";
 
 export function AdminSessionControl() {
@@ -25,6 +26,8 @@ export function AdminSessionControl() {
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
   const pdfInput = useRef<HTMLInputElement>(null);
+
+  useDocumentTitle(session ? session.title : t("control.loading"));
 
   useEffect(() => {
     stateRef.current = session;
