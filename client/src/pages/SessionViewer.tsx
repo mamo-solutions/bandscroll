@@ -122,7 +122,7 @@ export function SessionViewer() {
   const pdfUrl = session?.pdfUrl || "";
 
   return (
-    <div className="flex min-h-[calc(100dvh-4rem)] flex-1 flex-col">
+    <div className="flex h-[calc(100dvh_-_4rem)] flex-col">
       {/* Sub-header */}
       <div className="sticky top-16 z-30 border-b border-border/70 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -174,7 +174,7 @@ export function SessionViewer() {
       )}
 
       {/* PDF */}
-      <div className="relative mx-auto w-full max-w-6xl flex-1 px-2 py-3 sm:px-6">
+      <div className="relative mx-auto w-full max-w-6xl min-h-0 flex-1 px-2 py-3 sm:px-6">
         <div className="h-full overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-soft)]">
           {pdfUrl ? (
             <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
