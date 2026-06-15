@@ -2,6 +2,7 @@
   "name": "bandscroll",
   "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Realtime synchronized PDF scrolling for live sessions (PWA MVP)",
   "scripts": {
     "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",

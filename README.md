@@ -1,259 +1,139 @@
 # BandScroll
 
-Eine selbst hostbare **React-PWA**, mit der das PDF-Scrolling einer Live-Session
-in Echtzeit über WebSockets synchronisiert wird. Eine Band, ein Dirigent oder
-ein Host öffnet ein PDF (z. B. Noten oder ein Set-Sheet), steuert den
-automatischen Scroll-Fortschritt und überträgt diesen Zustand live an viele
-Zuschauer-Clients. Öffentliche Nutzer können Sessions sehen und beitreten; der
-Steuerungs-/Dirigent-Bereich ist passwortgeschützt.
+**Real-time synchronized PDF scrolling for live sessions.**
 
-> MVP – funktional, testbar und gut erweiterbar. In-Memory-State, keine Datenbank.
+BandScroll lets a host — a conductor, band leader, or presenter — open a PDF
+(sheet music, a set sheet, slides) and control its auto-scroll while many
+read-only viewers follow along in perfect sync over WebSockets. The audience
+just opens a link or types a session code; their PDF scrolls itself, exactly in
+time with the host.
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+> Self-hostable · no accounts for viewers · mobile-first PWA
 
 ---
 
 ## Features
 
-- 🎼 Host/Dirigent steuert Auto-Scroll eines PDFs für ein Publikum
-- 🔄 Echtzeit-Sync über Socket.IO (Play / Pause / Stop / Seek / Speed)
-- 👀 Öffentliche, read-only Zuschauer-Ansicht je Session-Code (`SESSION-7421`)
-- 🔐 Admin-Login per Passwort **ausschließlich aus der Backend-`.env`**
-  (HTTP-only Session-Cookie, kein Passwort im React-Bundle)
-- 🧮 Driftfreie Sync-Logik: Clients berechnen die Position lokal weiter und
-  korrigieren weich anhand der Server-Snapshots
-- 📤 PDF-Upload (nur PDF, max. 50 MB, zufällige Dateinamen → kein Path-Traversal)
-- 📱 Installierbar als PWA; modernes, warm-pastelliges UI (Tailwind v4 +
-  shadcn/ui), mobile-first und responsiv auf allen Bildschirmgrößen
-- 🐳 Docker + Docker Compose + Caddy Reverse-Proxy
+- 🎼 **Host-controlled auto-scroll** — play, pause, stop, seek, speed, restart.
+- 🔄 **Real-time sync** over Socket.IO; viewers are strictly read-only.
+- 🎵 **Swap songs live** — change the PDF mid-session without dropping viewers.
+- 👀 **Open session list + join-by-code** (e.g. `SESSION-7421`) on the home page.
+- 🔐 **Password-protected host area**; the password lives only in the backend
+  `.env` and never reaches the browser bundle.
+- 🧮 **Drift-free playback** — viewers extrapolate position locally and gently
+  correct toward the host's authoritative state.
+- 🌍 **English & German UI**, auto-detected from the browser with a manual toggle.
+- 📱 **Installable PWA** with a modern, responsive, warm-pastel interface.
+- 🐳 **Docker-ready**, or run it behind your existing nginx / Caddy.
 
----
+## How it works
 
-## Architektur
-
-```
-Browser (React PWA)  ──HTTP/WS──>  Caddy  ──>  Node/Express + Socket.IO
-   /                   PDF.js                      In-Memory SessionStore
-   /session/:code      Auto-Scroll                 /uploads (lokales Volume)
-   /admin*             Steuerung
-```
-
-- **Frontend:** React + Vite + TypeScript, React Router, `react-pdf` (PDF.js),
-  `socket.io-client`, `vite-plugin-pwa`.
-- **Backend:** Node + TypeScript + Express, `socket.io`, `express-session`
-  (Session-Cookie wird mit Socket.IO geteilt → Admin-Events serverseitig
-  authentifiziert), `multer` für Uploads.
-- **State:** autoritativ im Server (`Map<string, SessionState>`). `progress` ist
-  von `0.0` bis `1.0` normalisiert, `speed` ist `progress` pro Sekunde.
-- **Prod:** Der Server liefert das gebaute React-`dist` und `/uploads` statisch
-  aus; Caddy terminiert TLS und proxyt auf `app:3000`.
-
-### Sync-Logik (Kern)
-
-Der Server hält den State. Während `playing === true` berechnet jeder Client
-lokal seine Position:
+The server holds the single source of truth per session: a normalized
+`progress` (0–1), a `speed` (progress per second), and a server timestamp. It
+does **not** tick a timer — instead every client computes its own position:
 
 ```ts
-effectiveProgress = clamp01(state.progress + ((Date.now() - state.updatedAt) / 1000) * state.speed);
-scrollTop = effectiveProgress * (scrollHeight - clientHeight);
+effectiveProgress = clamp01(progress + ((now - updatedAt) / 1000) * speed)
 ```
 
-Eingehende Updates springen nicht hart: bei kleiner Differenz wird weich
-angenähert, bei großer Differenz (Seek/Korrektur) direkt gesetzt. Der Host
-sendet diskrete Events bei Play/Pause/Seek/Speed und zusätzlich während des
-Abspielens alle **250 ms** einen schlanken `admin-sync`.
+So a single state update with `playing: true` is enough to keep a client
+scrolling indefinitely. The host emits discrete events on play/pause/seek/speed
+plus a slim sync every 250 ms to keep everyone aligned; viewers ease toward the
+target each frame and snap on large corrections (seeks). State is authoritative
+on the server and shared between HTTP and WebSocket via a single session.
 
----
+## Tech stack
 
-## Lokale Installation
+- **Frontend:** React + Vite + TypeScript, React Router, `react-pdf` (PDF.js),
+  `socket.io-client`, Tailwind v4 with shadcn-style components, PWA.
+- **Backend:** Node + TypeScript + Express, Socket.IO, `express-session`,
+  `multer` for uploads. In-memory state (no database required).
+- **Tests:** Vitest (unit + an integration suite that boots the real server).
 
-Voraussetzungen: Node.js 20+ (getestet mit Node 22/26), npm.
+## Quick start
 
-### Variante A – beide Apps zusammen (Root)
+Requirements: Node.js 20+ and npm.
 
 ```bash
-npm install            # installiert nur 'concurrently' im Root
-npm run install:all    # installiert server/ und client/ Dependencies
-npm run dev            # startet Backend (:3000) und Frontend (:5173) parallel
+git clone <your-fork-url> bandscroll && cd bandscroll
+cp .env.example .env          # then edit ADMIN_PASSWORD and ADMIN_SESSION_SECRET
+npm install && npm run install:all
+npm run dev                   # backend on :3000, frontend on :5173
 ```
 
-### Variante B – getrennt
+Open <http://localhost:5173>. The host area is at `/admin` (link in the footer).
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Run backend + frontend together (hot reload). |
+| `npm run build` | Build the client, then the server (also the typecheck gate). |
+| `npm test` | Run the server and client test suites. |
+
+## Configuration
+
+All configuration is via the root `.env` (see `.env.example`):
+
+| Variable | Description |
+| --- | --- |
+| `NODE_ENV` | `development` or `production` (enables the `secure` cookie). |
+| `PORT` | Backend port (default `3000`). |
+| `ADMIN_PASSWORD` | Host login password. **Backend only — never in the frontend.** |
+| `ADMIN_SESSION_SECRET` | Long random string used to sign the session cookie. |
+| `UPLOAD_DIR` | Where uploaded PDFs are stored. |
+| `PUBLIC_BASE_URL` | Public base URL, used for shareable links. |
+
+There is intentionally **no** `VITE_ADMIN_PASSWORD`: the password is POSTed once
+and authentication lives in an http-only cookie.
+
+## Deployment
+
+The server serves the built client and the uploads directory, so a reverse proxy
+only needs to forward one port (`3000`) — including WebSocket upgrades.
+
+**Docker Compose (with bundled Caddy for TLS):**
 
 ```bash
-# Backend
-cd server
-npm install
-npm run dev            # http://localhost:3000
-
-# Frontend (zweites Terminal)
-cd client
-npm install
-npm run dev            # http://localhost:5173
-```
-
-- Frontend: <http://localhost:5173>
-- Backend: <http://localhost:3000> (Health-Check: `/api/health`)
-
-Vite proxyt `/api`, `/uploads` und `/socket.io` im Dev-Modus auf `:3000`, sodass
-der Browser eine einzige Origin sieht (Cookies + WebSockets ohne CORS-Probleme).
-
----
-
-## Installation mit Docker Compose
-
-```bash
-cp .env.example .env   # Werte anpassen (siehe unten)
+cp .env.example .env          # set production values, NODE_ENV=production
 docker compose up --build
 ```
 
-- App + Caddy starten. Aufruf über <https://localhost> (Caddy stellt für
-  `localhost` ein lokales Zertifikat aus).
-- `uploads/` ist als Volume gemountet und bleibt erhalten.
-- Für eine echte Domain: `Caddyfile` anpassen (siehe Kommentare darin) und
-  `PUBLIC_BASE_URL` sowie `NODE_ENV=production` in der `.env` setzen.
+**Behind an existing nginx / Caddy:** run the app (via the `Dockerfile` or a
+systemd service) bound to `127.0.0.1:3000` and reverse-proxy a subdomain to it.
+The proxy must forward WebSocket upgrade headers and allow ~50 MB request bodies
+for PDF uploads. Set `NODE_ENV=production` so the session cookie is marked
+`secure`; the app already trusts `X-Forwarded-Proto`.
 
----
-
-## `.env` Konfiguration
-
-`.env` liegt im Projekt-Root (wird vom Server geladen). Siehe `.env.example`:
-
-| Variable               | Beschreibung                                                            |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `NODE_ENV`             | `development` oder `production` (steuert `secure`-Cookie).              |
-| `PORT`                 | Backend-Port (Default `3000`).                                          |
-| `ADMIN_PASSWORD`       | Admin-/Dirigent-Passwort. **Nur Backend. Niemals im Frontend.**        |
-| `ADMIN_SESSION_SECRET` | Langer, zufälliger String zum Signieren des Session-Cookies.           |
-| `UPLOAD_DIR`           | Upload-Verzeichnis (Dev: `../uploads`, Docker: `/uploads`).            |
-| `PUBLIC_BASE_URL`      | Öffentliche Basis-URL (für geteilte Links).                            |
-
-> ⚠️ Es gibt bewusst **keine** `VITE_ADMIN_PASSWORD` o. Ä. – das Passwort darf
-> nie ins Client-Bundle gelangen. Der Login schickt das Passwort einmalig an das
-> Backend; die Authentifizierung lebt danach im HTTP-only Cookie.
-
----
-
-## Admin-Login
-
-1. `/admin/login` öffnen.
-2. Passwort aus der `.env` (`ADMIN_PASSWORD`) eingeben → POST `/api/admin/login`.
-3. Bei Erfolg setzt das Backend ein HTTP-only Cookie und leitet zu `/admin`.
-4. `/admin` und `/admin/session/:id` sind ohne gültiges Cookie nicht erreichbar
-   (geprüft über `/api/admin/me`).
-5. Das Passwort wird **nicht** in `localStorage`/`sessionStorage` gespeichert.
-
----
-
-## Public-Session-Flow
-
-1. Admin erstellt im Dashboard eine Session (Titel, optionale Beschreibung, PDF).
-2. Ein Session-Code wird generiert (z. B. `SESSION-7421`).
-3. Admin öffnet die Dirigent-Ansicht und startet die Wiedergabe (Play).
-4. Zuschauer öffnen `/` und treten per Karte oder Code-Eingabe bei
-   (`/session/:code`).
-5. Clients joinen den Socket-Room, erhalten den aktuellen State und scrollen
-   automatisch synchron mit. Bei Verbindungsverlust erscheint ein Hinweis; bei
-   Reconnect wird der Room neu betreten, der State neu angefordert und die
-   Position korrigiert. Clients können **keine** Steuerbefehle senden.
-
----
-
-## WebSocket-Event-Übersicht
-
-**Client → Server**
-
-| Event                   | Payload          | Zweck                          |
-| ----------------------- | ---------------- | ------------------------------ |
-| `join-session`          | `code`           | Session-Room beitreten         |
-| `leave-session`         | –                | Room verlassen                 |
-| `request-session-state` | `code?`          | Aktuellen State anfordern      |
-
-**Admin → Server** (serverseitig authentifiziert; sonst ignoriert + `admin-error`)
-
-| Event               | Payload                        | Zweck                         |
-| ------------------- | ------------------------------ | ----------------------------- |
-| `admin-join-session`| `sessionId`                    | Als Host dem Room beitreten   |
-| `admin-play`        | `sessionId`                    | Wiedergabe starten            |
-| `admin-pause`       | `sessionId`                    | Pausieren                     |
-| `admin-stop`        | `sessionId`                    | Stop + Position auf 0         |
-| `admin-seek`        | `{ sessionId, progress }`      | Position setzen               |
-| `admin-set-speed`   | `{ sessionId, speed }`         | Geschwindigkeit (progress/s)  |
-| `admin-sync`        | `{ sessionId, progress, playing }` | Schlanker 250-ms-Sync     |
-
-**Server → Clients**
-
-| Event                  | Payload                              | Zweck                       |
-| ---------------------- | ------------------------------------ | --------------------------- |
-| `session-state`        | `SessionState`                       | Vollständiger Zustand       |
-| `session-ended`        | `{ id }`                             | Session wurde beendet       |
-| `session-not-found`    | `{ code }`                           | Unbekannter Code            |
-| `client-count`         | `{ sessionId, connectedClients }`    | Aktualisierte Client-Zahl   |
-| `session-list-updated` | –                                    | Öffentliche Liste änderte sich |
-
----
-
-## REST-API (Kurzüberblick)
-
-Public: `GET /api/health`, `GET /api/sessions/public`,
-`GET /api/sessions/code/:code`, `GET /uploads/:filename`.
-
-Admin (Cookie nötig): `POST /api/admin/login|logout`, `GET /api/admin/me`,
-`GET/POST /api/admin/sessions`, `GET /api/admin/sessions/:id`,
-`POST /api/admin/sessions/:id/{pdf,start,pause,seek,speed,end}`,
-`DELETE /api/admin/sessions/:id`.
-
----
-
-## Load-Test-Hinweise (Ziel: bis 300 Clients)
-
-- Die Last ist überwiegend ausgehend: Der Server broadcastet pro Session ~4
-  schlanke `session-state`-Nachrichten pro Sekunde an alle Room-Mitglieder.
-- Beispiel-Lasttest mit [`artillery`](https://www.artillery.io/) +
-  `engine: socketio`: 300 virtuelle Nutzer, jeweils `connect` →
-  `join-session` mit einem Code → 60 s idle (nur empfangen).
-- Achte auf Datei-Deskriptor-Limits (`ulimit -n`) und genügend RAM.
-- Optional für mehr Durchsatz: Socket.IO mit einem Redis-Adapter horizontal
-  skalieren (nicht Teil des MVP).
-- Tipp: Das PDF wird einmalig pro Client geladen (statisches Caching durch
-  Caddy/Browser); der laufende Sync-Traffic ist klein.
-
----
-
-## Bekannte MVP-Einschränkungen
-
-- **In-Memory-State:** Sessions gehen bei einem Server-Neustart verloren.
-- **Eine einzige Admin-Rolle** (ein gemeinsames Passwort, keine Nutzerkonten).
-- Keine PDF-Vorschau/Seitennavigation außer dem fortlaufenden Scroll.
-- Keine horizontale Skalierung (Single-Node Socket.IO, kein Redis-Adapter).
-- Uploads werden nicht automatisch aufgeräumt (auch nach `delete`/`end` bleibt
-  die PDF-Datei liegen).
-- Keine Rate-Limits/Brute-Force-Schutz am Login (für Testbetrieb ausreichend).
-
----
-
-## Nächste Ausbaustufen
-
-- Persistenz (SQLite/Postgres) für Sessions und Uploads-Metadaten.
-- Redis-Adapter für Socket.IO → mehrere App-Instanzen.
-- Eigene Nutzerkonten/Rollen statt eines globalen Admin-Passworts.
-- PDF-Seitenmarken/Sprungmarken, Setlist mit mehreren Stücken.
-- Aufräumen verwaister Uploads, Rate-Limiting am Login, Audit-Log.
-- Latenzmessung/Clock-Offset-Korrektur für noch präziseren Sync.
-
----
-
-## Projektstruktur
+## Project structure
 
 ```
 bandscroll/
 ├── client/          # React + Vite PWA
-│   └── src/{api,sockets,types,components,pages}
+│   └── src/{api,sockets,types,components,pages,i18n}
 ├── server/          # Express + Socket.IO
-│   └── src/{index,env,types,sessionStore,auth}.ts
+│   └── src/{app,index,env,types,sessionStore,auth}.ts
 │       ├── routes/{publicRoutes,adminRoutes}.ts
 │       └── sockets/socketServer.ts
-├── uploads/         # hochgeladene PDFs (Volume)
-├── .env.example
-├── Dockerfile
-├── docker-compose.yml
-├── Caddyfile
-└── README.md
+├── uploads/         # uploaded PDFs
+├── Dockerfile · docker-compose.yml · Caddyfile
+└── .env.example
 ```
+
+## Limitations & roadmap
+
+State is in-memory, so a restart clears live sessions — fine for an MVP, and a
+natural first candidate for persistence. Uploads are not garbage-collected, and
+there is a single shared host password (no per-user accounts). Possible next
+steps: persistence (SQLite/Postgres), a Redis adapter for horizontal scaling,
+multi-PDF setlists, and per-user roles.
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) — we
+use the Developer Certificate of Origin (`git commit -s`) rather than a CLA.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for
+attribution.
