@@ -7,7 +7,6 @@ import {
   Play,
   Plus,
   SkipBack,
-  SlidersHorizontal,
   Square,
   Timer,
   Users,
@@ -54,7 +53,6 @@ export function PlaybackControls({
 }: Props) {
   const { t } = useI18n();
   const [duration, setDuration] = useState("");
-  const [manual, setManual] = useState(false);
 
   // Track the latest intended speed so rapid +/- clicks accumulate even before
   // the server broadcast updates session.speed.
@@ -155,7 +153,7 @@ export function PlaybackControls({
           {t("controls.speed")}
         </span>
 
-        {/* Presets (slow → fast) + Manual toggle */}
+        {/* Presets (slow → fast) + manual steppers */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-lg bg-muted p-1">
             {SPEED_PRESETS.map((value, i) => (
@@ -175,43 +173,32 @@ export function PlaybackControls({
             ))}
           </div>
 
-          <Button
-            variant={manual ? "secondary" : "outline"}
-            size="sm"
-            onClick={() => setManual((m) => !m)}
-            aria-pressed={manual}
-          >
-            <SlidersHorizontal />
-            {t("controls.manual")}
-          </Button>
-        </div>
-
-        {/* Manual fine-tune steppers */}
-        {manual && (
-          <div className="flex items-center gap-3">
+          <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
+              className="size-8"
               onClick={() => nudge(-SPEED_STEP)}
               disabled={session.speed <= SPEED_MIN}
               aria-label={t("controls.slower")}
             >
-              <Minus />
+              <Minus className="size-4" />
             </Button>
-            <span className="min-w-20 text-center font-heading text-lg font-semibold tabular-nums">
+            <span className="min-w-[4.5rem] text-center text-sm font-semibold tabular-nums">
               {session.speed.toFixed(5)}
             </span>
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
+              className="size-8"
               onClick={() => nudge(SPEED_STEP)}
               disabled={session.speed >= SPEED_MAX}
               aria-label={t("controls.faster")}
             >
-              <Plus />
+              <Plus className="size-4" />
             </Button>
           </div>
-        )}
+        </div>
 
         {/* Set by song length (1 / seconds) */}
         <div className="flex items-end gap-2 pt-1">

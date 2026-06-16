@@ -41,7 +41,7 @@ export function createSession(input: CreateSessionInput): SessionState {
     status: "draft",
     playing: false,
     progress: 0,
-    speed: 0.001,
+    speed: 0.0002, // default to client speed preset 3
     updatedAt: now,
     connectedClients: 0,
     createdAt: now,

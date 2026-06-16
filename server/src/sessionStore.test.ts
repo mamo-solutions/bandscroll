@@ -47,7 +47,7 @@ describe("createSession", () => {
     expect(s.status).toBe("draft");
     expect(s.playing).toBe(false);
     expect(s.progress).toBe(0);
-    expect(s.speed).toBe(0.001);
+    expect(s.speed).toBe(0.0002);
     expect(s.pdfUrl).toBe("");
     expect(s.connectedClients).toBe(0);
     expect(s.createdAt).toBeTypeOf("number");
