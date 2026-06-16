@@ -126,10 +126,11 @@ bandscroll/
 ## Limitations & roadmap
 
 Sessions default to in-memory storage; set `STORAGE=file` in `.env` to persist
-them across restarts. Uploads are not garbage-collected, and there is a single
-shared host password (no per-user accounts). Possible next steps: a SQLite/Postgres
-adapter, a Redis adapter for horizontal scaling, multi-PDF setlists, and per-user
-roles.
+them across restarts. Uploads are garbage-collected when a session is deleted or
+its PDF is replaced, provided no other session references the same file. There is
+a single shared host password (no per-user accounts). Possible next steps: a
+SQLite/Postgres adapter, a Redis adapter for horizontal scaling, multi-PDF setlists,
+and per-user roles.
 
 ## Contributing
 

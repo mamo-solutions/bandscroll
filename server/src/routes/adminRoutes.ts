@@ -18,6 +18,7 @@ import {
   broadcastSessionListUpdated,
   broadcastSessionState,
 } from "../sockets/socketServer.js";
+import { removeObsoleteUpload } from "../uploads/cleanup.js";
 
 export const adminRouter = Router();
 
@@ -116,6 +117,7 @@ adminRouter.post("/sessions/:id/pdf", upload.single("pdf"), (req, res) => {
     return;
   }
   const pdfUrl = `/uploads/${req.file.filename}`;
+  const oldPdfUrl = session.pdfUrl;
   // A new document means a new song: reset to the top and pause so viewers
   // don't keep extrapolating the previous song's scroll position.
   const updated = updateSessionState(session.id, {
@@ -126,6 +128,9 @@ adminRouter.post("/sessions/:id/pdf", upload.single("pdf"), (req, res) => {
   if (updated) {
     broadcastSessionState(updated);
     broadcastSessionListUpdated();
+    if (oldPdfUrl && oldPdfUrl !== pdfUrl) {
+      removeObsoleteUpload(oldPdfUrl);
+    }
   }
   res.json(updated);
 });
@@ -194,6 +199,9 @@ adminRouter.delete("/sessions/:id", (req, res) => {
     broadcastSessionEnded(session);
   }
   const ok = deleteSession(req.params.id);
+  if (ok && session) {
+    removeObsoleteUpload(session.pdfUrl);
+  }
   broadcastSessionListUpdated();
   res.json({ ok });
 });

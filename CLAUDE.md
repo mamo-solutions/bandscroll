@@ -63,7 +63,7 @@ Most routes render inside [Layout.tsx](client/src/components/Layout.tsx) (shared
 `listPublicSessions()` returns all **non-ended** sessions (draft + live), newest first. Creating a session makes it instantly visible on `/` and fires `session-list-updated`. A listed draft may have no PDF yet; the viewer shows a placeholder and updates live when the PDF/state changes.
 
 ### Session codes & uploads
-Codes are `SESSION-####` generated in `generateCode()`. PDF uploads (multer, [adminRoutes.ts](server/src/routes/adminRoutes.ts)) are admin-only, PDF-only, ≤50 MB, stored under `UPLOAD_DIR` with a random UUID filename (never the client filename — path-traversal safe). Served read-only at `/uploads/:file`.
+Codes are `SESSION-####` generated in `generateCode()`. PDF uploads (multer, [adminRoutes.ts](server/src/routes/adminRoutes.ts)) are admin-only, PDF-only, ≤50 MB, stored under `UPLOAD_DIR` with a random UUID filename (never the client filename — path-traversal safe). Served read-only at `/uploads/:file`. Obsolete upload files are removed by [cleanup.ts](server/src/uploads/cleanup.ts) when a session is deleted or its PDF is replaced, as long as no other session still references the file.
 
 ## Conventions & constraints
 
