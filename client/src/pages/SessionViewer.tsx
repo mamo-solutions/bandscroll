@@ -152,18 +152,7 @@ export function SessionViewer() {
   const pdfUrl = session?.pdfUrl || "";
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-muted/40">
-      {/* Document fills the whole screen; chrome floats on top. */}
-      <div className="absolute inset-0">
-        {pdfUrl ? (
-          <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
-        ) : (
-          <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
-            {t("viewer.noPdf")}
-          </div>
-        )}
-      </div>
-
+    <div className="flex h-dvh flex-col overflow-hidden bg-muted/40">
       {/* Single merged bar: brand/home + title + status + progress. Auto-hides
           while playing. */}
       <header
@@ -213,10 +202,22 @@ export function SessionViewer() {
         </div>
       )}
 
-      {/* Footer overlay — auto-hides with the bar. */}
+      {/* Document area: sits between the header and footer so the footer is not
+          sticky/overlaying the score. */}
+      <div className="relative flex-1 overflow-hidden">
+        {pdfUrl ? (
+          <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
+        ) : (
+          <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
+            {t("viewer.noPdf")}
+          </div>
+        )}
+      </div>
+
+      {/* Footer sits at the bottom of the page and auto-hides while playing. */}
       <div
         className={cn(
-          "absolute inset-x-0 bottom-0 z-20 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md transition-transform duration-300 ease-out",
+          "shrink-0 z-20 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md transition-transform duration-300 ease-out",
           chromeHidden && "translate-y-full"
         )}
       >
