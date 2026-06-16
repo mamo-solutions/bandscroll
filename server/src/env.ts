@@ -29,6 +29,10 @@ export const env = {
   // Resolved to an absolute path so uploads land in one predictable place.
   UPLOAD_DIR: resolve(process.cwd(), process.env.UPLOAD_DIR ?? "../uploads"),
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL ?? "http://localhost:3000",
+  // Storage backend. "memory" keeps the original zero-config behaviour;
+  // "file" persists sessions to DATA_DIR/sessions.json across restarts.
+  STORAGE: process.env.STORAGE ?? "memory",
+  DATA_DIR: resolve(process.cwd(), process.env.DATA_DIR ?? "../data"),
 };
 
 export type Env = typeof env;

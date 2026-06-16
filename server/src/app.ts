@@ -5,6 +5,9 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { env } from "./env.js";
 import { sessionMiddleware } from "./auth.js";
+import { configureSessionStore } from "./sessionStore.js";
+import { MemorySessionStore } from "./store/memorySessionStore.js";
+import { FileSessionStore } from "./store/fileSessionStore.js";
 import { publicRouter } from "./routes/publicRoutes.js";
 import { adminRouter } from "./routes/adminRoutes.js";
 import { initSocketServer } from "./sockets/socketServer.js";
@@ -14,6 +17,13 @@ import { initSocketServer } from "./sockets/socketServer.js";
  * call listen(). Used by the entrypoint ([index.ts]) and by integration tests.
  */
 export function createAppServer(): { app: express.Express; httpServer: HttpServer } {
+  // Select the session storage backend before any route can touch the store.
+  const storeAdapter =
+    env.STORAGE === "file"
+      ? new FileSessionStore(env.DATA_DIR)
+      : new MemorySessionStore();
+  configureSessionStore(storeAdapter);
+
   const app = express();
   app.set("trust proxy", 1); // behind Caddy in production
 

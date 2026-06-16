@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { SessionState, SessionStatus } from "./types.js";
+import { MemorySessionStore } from "./store/memorySessionStore.js";
+import type { SessionStoreAdapter } from "./store/sessionStoreAdapter.js";
 
-const sessions = new Map<string, SessionState>();
+let adapter: SessionStoreAdapter = new MemorySessionStore();
+
+/** Replace the active storage backend (used once at app startup). */
+export function configureSessionStore(newAdapter: SessionStoreAdapter): void {
+  adapter = newAdapter;
+}
 
 function generateCode(): string {
   // e.g. SESSION-7421 — re-roll on the (very unlikely) collision.
@@ -39,17 +46,17 @@ export function createSession(input: CreateSessionInput): SessionState {
     connectedClients: 0,
     createdAt: now,
   };
-  sessions.set(session.id, session);
+  adapter.set(session.id, session);
   return session;
 }
 
 export function getSessionById(id: string): SessionState | undefined {
-  return sessions.get(id);
+  return adapter.get(id);
 }
 
 export function getSessionByCode(code: string): SessionState | undefined {
   const normalized = code.trim().toUpperCase();
-  for (const session of sessions.values()) {
+  for (const session of adapter.values()) {
     if (session.code === normalized) return session;
   }
   return undefined;
@@ -57,13 +64,13 @@ export function getSessionByCode(code: string): SessionState | undefined {
 
 /** Public list: all open (non-ended) sessions, newest first. */
 export function listPublicSessions(): SessionState[] {
-  return [...sessions.values()]
+  return [...adapter.values()]
     .filter((s) => s.status !== "ended")
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export function listAdminSessions(): SessionState[] {
-  return [...sessions.values()].sort((a, b) => b.createdAt - a.createdAt);
+  return [...adapter.values()].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export type SessionPatch = Partial<
@@ -77,12 +84,12 @@ export function updateSessionState(
   id: string,
   patch: SessionPatch
 ): SessionState | undefined {
-  const session = sessions.get(id);
+  const session = adapter.get(id);
   if (!session) return undefined;
   if (patch.progress !== undefined) patch.progress = clampProgress(patch.progress);
   Object.assign(session, patch);
   session.updatedAt = Date.now();
-  return session;
+  return adapter.set(session.id, session);
 }
 
 export function setStatus(id: string, status: SessionStatus): SessionState | undefined {
@@ -90,27 +97,27 @@ export function setStatus(id: string, status: SessionStatus): SessionState | und
 }
 
 export function endSession(id: string): SessionState | undefined {
-  const session = sessions.get(id);
+  const session = adapter.get(id);
   if (!session) return undefined;
   session.status = "ended";
   session.playing = false;
   session.updatedAt = Date.now();
-  return session;
+  return adapter.set(session.id, session);
 }
 
 export function deleteSession(id: string): boolean {
-  return sessions.delete(id);
+  return adapter.delete(id);
 }
 
 export function incrementClientCount(id: string): number {
-  const session = sessions.get(id);
+  const session = adapter.get(id);
   if (!session) return 0;
   session.connectedClients += 1;
   return session.connectedClients;
 }
 
 export function decrementClientCount(id: string): number {
-  const session = sessions.get(id);
+  const session = adapter.get(id);
   if (!session) return 0;
   session.connectedClients = Math.max(0, session.connectedClients - 1);
   return session.connectedClients;

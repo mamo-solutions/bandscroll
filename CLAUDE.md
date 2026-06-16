@@ -35,7 +35,7 @@ Login uses `ADMIN_PASSWORD` from the root `.env` (not `.env.example`). The value
 ## Architecture
 
 ### Authoritative state + client-side extrapolation
-The server holds the single source of truth per session in an in-memory `Map` ([server/src/sessionStore.ts](server/src/sessionStore.ts)). `progress` is normalized `0..1`, `speed` is `progress`/second, `updatedAt` is a server ms timestamp. The server does **not** tick progress on a timer. Instead each client computes its own position via `effectiveProgress()` ([client/src/types/session.ts](client/src/types/session.ts) and mirrored in [server/src/types.ts](server/src/types.ts)):
+The server holds the single source of truth per session in a pluggable store ([server/src/sessionStore.ts](server/src/sessionStore.ts)). The default adapter is an in-memory `Map` (`MemorySessionStore`), with an optional file-backed adapter (`FileSessionStore`) that persists to `DATA_DIR/sessions.json`. `progress` is normalized `0..1`, `speed` is `progress`/second, `updatedAt` is a server ms timestamp. The server does **not** tick progress on a timer. Instead each client computes its own position via `effectiveProgress()` ([client/src/types/session.ts](client/src/types/session.ts) and mirrored in [server/src/types.ts](server/src/types.ts)):
 
 ```
 effectiveProgress = clamp01(progress + ((now - updatedAt) / 1000) * speed)
@@ -70,5 +70,5 @@ Codes are `SESSION-####` generated in `generateCode()`. PDF uploads (multer, [ad
 - **ESM with `.js` extensions on relative imports in `server/src`** — required so the same source runs under `tsx` (dev) and compiled `node dist` (prod). Keep this when adding server files.
 - The `client` and `server` `tsconfig.json` differ (DOM lib + bundler/noEmit vs Node ESM emit). Run typechecks in the right package dir.
 - Dev relies on Vite proxying `/api`, `/uploads`, `/socket.io` → `:3000` so the browser sees one origin (cookies + WS work without CORS friction). In prod the server serves the built client `dist` + a SPA fallback; Caddy terminates TLS and proxies to `app:3000`.
-- State is in-memory only: a server restart drops all sessions. `ADMIN_PASSWORD` must never reach the client bundle — there is intentionally no `VITE_ADMIN_PASSWORD`; the password is POSTed once and auth lives in an http-only cookie.
+- State storage is configurable via `STORAGE` (`memory` or `file`). With `file`, sessions survive restarts in `DATA_DIR/sessions.json`; `connectedClients` and `updatedAt` are reset on load. `ADMIN_PASSWORD` must never reach the client bundle — there is intentionally no `VITE_ADMIN_PASSWORD`; the password is POSTed once and auth lives in an http-only cookie.
 - Set `NODE_ENV=production` in prod so the session cookie is sent with `secure: true`.

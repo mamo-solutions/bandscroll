@@ -49,7 +49,8 @@ on the server and shared between HTTP and WebSocket via a single session.
 - **Frontend:** React + Vite + TypeScript, React Router, `react-pdf` (PDF.js),
   `socket.io-client`, Tailwind v4 with shadcn-style components, PWA.
 - **Backend:** Node + TypeScript + Express, Socket.IO, `express-session`,
-  `multer` for uploads. In-memory state (no database required).
+  `multer` for uploads. Pluggable storage: in-memory by default, or file-backed
+  persistence via `STORAGE=file` (no database required).
 - **Tests:** Vitest (unit + an integration suite that boots the real server).
 
 ## Quick start
@@ -83,6 +84,8 @@ All configuration is via the root `.env` (see `.env.example`):
 | `ADMIN_SESSION_SECRET` | Long random string used to sign the session cookie. |
 | `UPLOAD_DIR` | Where uploaded PDFs are stored. |
 | `PUBLIC_BASE_URL` | Public base URL, used for shareable links. |
+| `STORAGE` | `memory` (default) or `file` for persisted sessions. |
+| `DATA_DIR` | Where `sessions.json` is stored when `STORAGE=file`. |
 
 There is intentionally **no** `VITE_ADMIN_PASSWORD`: the password is POSTed once
 and authentication lives in an http-only cookie.
@@ -122,11 +125,11 @@ bandscroll/
 
 ## Limitations & roadmap
 
-State is in-memory, so a restart clears live sessions — fine for an MVP, and a
-natural first candidate for persistence. Uploads are not garbage-collected, and
-there is a single shared host password (no per-user accounts). Possible next
-steps: persistence (SQLite/Postgres), a Redis adapter for horizontal scaling,
-multi-PDF setlists, and per-user roles.
+Sessions default to in-memory storage; set `STORAGE=file` in `.env` to persist
+them across restarts. Uploads are not garbage-collected, and there is a single
+shared host password (no per-user accounts). Possible next steps: a SQLite/Postgres
+adapter, a Redis adapter for horizontal scaling, multi-PDF setlists, and per-user
+roles.
 
 ## Contributing
 
