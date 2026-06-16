@@ -17,6 +17,17 @@ const DOCUMENT_OPTIONS = { verbosity: pdfjs.VerbosityLevel.ERRORS };
 
 const IMAGE_RE = /\.(png|jpe?g|webp|gif|avif)$/i;
 
+// PDF pages are rasterized once at this fixed bitmap width and then fit to the
+// container with CSS (.pdf-page-fit). Keeping the render width constant means an
+// orientation change never re-rasterizes the canvases — the previous behavior
+// (width tied to the container) re-rendered all 40+ pages at once on rotate,
+// blocking the main thread for seconds and crashing the tab.
+const RENDER_WIDTH = 1000;
+// Cap the device pixel ratio so large documents don't exhaust memory on
+// high-DPI phones (a 40-page PDF at DPR 3 is ~1 GB of canvas).
+const PAGE_DPR =
+  typeof window !== "undefined" ? Math.min(2, window.devicePixelRatio || 1) : 1;
+
 export type PdfViewerHandle = {
   /** Scroll the container to a normalized progress (0..1). */
   scrollToProgress: (progress: number) => void;
@@ -48,7 +59,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [numPages, setNumPages] = useState(0);
-  const [pageWidth, setPageWidth] = useState(800);
+  // CSS display width of each page/image wrapper (responsive). The PDF bitmap
+  // itself is always rendered at RENDER_WIDTH and scaled to this with CSS.
+  const [displayWidth, setDisplayWidth] = useState(800);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const rafPending = useRef(false);
@@ -102,32 +115,20 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     []
   );
 
-  // Responsive page width based on the container. Debounced to avoid thrashing
-  // PDF.js during mobile Safari orientation changes, which can abort in-flight
-  // page renders and surface as unhandled "Load failed" rejections.
+  // Responsive display width from the container. This only drives CSS sizing of
+  // the (already-rasterized) pages, so reacting to it is cheap — no PDF.js
+  // re-render happens on resize/rotate.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const measure = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const w = Math.min(900, el.clientWidth - 24);
-        setPageWidth((prev) => {
-          const next = Math.max(280, w);
-          // Only update when the change is meaningful; tiny fluctuations during
-          // scroll/chrome hide should not re-render the PDF pages.
-          return Math.abs(next - prev) > 8 ? next : prev;
-        });
-      }, 150);
+      const w = Math.min(RENDER_WIDTH, el.clientWidth - 24);
+      setDisplayWidth(Math.max(280, w));
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => {
-      ro.disconnect();
-      if (debounceTimer) clearTimeout(debounceTimer);
-    };
+    return () => ro.disconnect();
   }, []);
 
   // Block user-initiated scrolling on read-only viewers to prevent lag or
@@ -212,7 +213,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             <img
               src={fileUrl}
               alt=""
-              style={{ width: pageWidth }}
+              style={{ width: displayWidth }}
               onLoad={() => setLoading(false)}
               onError={() => setError("image")}
               className="h-auto rounded-lg shadow-[var(--shadow-lift)]"
@@ -240,11 +241,13 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               <div
                 key={i}
                 ref={(el) => { pageRefs.current[i] = el; }}
+                className="pdf-page-fit overflow-hidden rounded-lg shadow-[var(--shadow-lift)]"
+                style={{ width: displayWidth }}
               >
                 <Page
                   pageNumber={i + 1}
-                  width={pageWidth}
-                  className="overflow-hidden rounded-lg shadow-[var(--shadow-lift)]"
+                  width={RENDER_WIDTH}
+                  devicePixelRatio={PAGE_DPR}
                   renderTextLayer={false}
                   renderAnnotationLayer={false}
                 />

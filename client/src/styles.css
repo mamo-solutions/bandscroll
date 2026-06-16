@@ -132,3 +132,18 @@
     border: 2px solid var(--color-background);
   }
 }
+
+/*
+  PDF pages render at a fixed bitmap width (see PdfViewer RENDER_WIDTH) and are
+  fit to their responsive wrapper via CSS. This means an orientation change only
+  reflows/rescales — it never re-rasterizes the canvases, which would freeze the
+  main thread and crash the tab on large (40+ page) documents.
+*/
+.pdf-page-fit .react-pdf__Page,
+.pdf-page-fit canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+.pdf-page-fit canvas {
+  display: block;
+}
