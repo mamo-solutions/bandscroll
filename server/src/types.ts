@@ -1,5 +1,11 @@
 export type SessionStatus = "draft" | "live" | "ended";
 
+export type SongMarker = {
+  id: string;
+  title: string;
+  page: number; // 1-indexed page number in the PDF
+};
+
 export type SessionState = {
   id: string;
   code: string;
@@ -13,6 +19,7 @@ export type SessionState = {
   updatedAt: number; // server timestamp in ms
   connectedClients: number;
   createdAt: number;
+  markers: SongMarker[];
 };
 
 /** Slim payload broadcast to clients for the live scroll sync. */

@@ -45,6 +45,7 @@ export function createSession(input: CreateSessionInput): SessionState {
     updatedAt: now,
     connectedClients: 0,
     createdAt: now,
+    markers: [],
   };
   adapter.set(session.id, session);
   return session;
@@ -76,7 +77,14 @@ export function listAdminSessions(): SessionState[] {
 export type SessionPatch = Partial<
   Pick<
     SessionState,
-    "title" | "description" | "pdfUrl" | "status" | "playing" | "progress" | "speed"
+    | "title"
+    | "description"
+    | "pdfUrl"
+    | "status"
+    | "playing"
+    | "progress"
+    | "speed"
+    | "markers"
   >
 >;
 

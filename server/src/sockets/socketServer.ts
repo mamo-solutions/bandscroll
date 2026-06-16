@@ -152,6 +152,15 @@ export function initSocketServer(
       }
     );
 
+    socket.on(
+      "admin-set-markers",
+      (payload: { sessionId: string; markers: SessionState["markers"] }) => {
+        if (!guardAdmin()) return;
+        const markers = Array.isArray(payload?.markers) ? payload.markers : [];
+        adminUpdate(String(payload?.sessionId), { markers });
+      }
+    );
+
     // Lightweight periodic sync sent ~every 250ms while playing.
     socket.on(
       "admin-sync",

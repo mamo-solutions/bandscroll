@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-import { effectiveProgress, type SessionState } from "@/types/session";
+import { clamp01, effectiveProgress, type SessionState, type SongMarker } from "@/types/session";
 
 export function AdminSessionControl() {
   const { id = "" } = useParams();
@@ -41,6 +41,11 @@ export function AdminSessionControl() {
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
   const pdfInput = useRef<HTMLInputElement>(null);
+
+  const KB_SEEK_STEP = 0.02;
+  const KB_SPEED_STEP = 0.00002;
+  const KB_SPEED_MIN = 0.00001;
+  const KB_SPEED_MAX = 0.002;
 
   useDocumentTitle(session ? session.title : t("control.loading"));
 
@@ -118,6 +123,54 @@ export function AdminSessionControl() {
     return () => clearInterval(interval);
   }, [session?.playing, id]);
 
+  // ---- Keyboard shortcuts for live conducting ----
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!session) return;
+      const target = e.target as HTMLElement;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          session.playing ? pause() : play();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          seek(clamp01(liveProgressRef.current - KB_SEEK_STEP));
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          seek(clamp01(liveProgressRef.current + KB_SEEK_STEP));
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setSpeed(
+            Math.min(KB_SPEED_MAX, Math.max(KB_SPEED_MIN, session.speed + KB_SPEED_STEP))
+          );
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          setSpeed(
+            Math.min(KB_SPEED_MAX, Math.max(KB_SPEED_MIN, session.speed - KB_SPEED_STEP))
+          );
+          break;
+        case "r":
+        case "R":
+          e.preventDefault();
+          restart();
+          break;
+        case "s":
+        case "S":
+          e.preventDefault();
+          stop();
+          break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [session, id]);
+
   const socket = getSocket();
 
   function play() {
@@ -150,6 +203,33 @@ export function AdminSessionControl() {
   }
   function setSpeed(speed: number) {
     socket.emit("admin-set-speed", { sessionId: id, speed });
+  }
+
+  function setMarkers(markers: SongMarker[]) {
+    socket.emit("admin-set-markers", { sessionId: id, markers });
+  }
+
+  function addMarker(title: string, page: number) {
+    if (!session || !title.trim() || page < 1 || page > numPages) return;
+    const marker: SongMarker = {
+      id: crypto.randomUUID(),
+      title: title.trim(),
+      page,
+    };
+    const next = [...session.markers, marker].sort((a, b) => a.page - b.page);
+    setMarkers(next);
+  }
+
+  function deleteMarker(markerId: string) {
+    if (!session) return;
+    const next = session.markers.filter((m) => m.id !== markerId);
+    setMarkers(next);
+  }
+
+  function seekToMarker(page: number) {
+    if (!numPages || page < 1 || page > numPages) return;
+    const progress = viewerRef.current?.getProgressForPage(page) ?? clamp01((page - 1) / numPages);
+    seek(progress);
   }
 
   async function handleLogout() {
@@ -310,6 +390,9 @@ export function AdminSessionControl() {
           onSetSpeed={setSpeed}
           onSeek={seek}
           onSeekToCurrent={seekToCurrent}
+          onAddMarker={addMarker}
+          onDeleteMarker={deleteMarker}
+          onSeekToMarker={seekToMarker}
         />
       </Card>
     </main>

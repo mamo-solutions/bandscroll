@@ -3,12 +3,14 @@ import {
   Crosshair,
   Gauge,
   Minus,
+  Music,
   Pause,
   Play,
   Plus,
   SkipBack,
   Square,
   Timer,
+  Trash2,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,9 @@ type Props = {
   onSetSpeed: (speed: number) => void;
   onSeek: (progress: number) => void;
   onSeekToCurrent: () => void;
+  onAddMarker: (title: string, page: number) => void;
+  onDeleteMarker: (id: string) => void;
+  onSeekToMarker: (page: number) => void;
 };
 
 export function PlaybackControls({
@@ -62,9 +67,14 @@ export function PlaybackControls({
   onSetSpeed,
   onSeek,
   onSeekToCurrent,
+  onAddMarker,
+  onDeleteMarker,
+  onSeekToMarker,
 }: Props) {
   const { t } = useI18n();
   const [pagesPerSong, setPagesPerSong] = useState<string>("2");
+  const [markerTitle, setMarkerTitle] = useState("");
+  const [markerPage, setMarkerPage] = useState("");
   const [beatsPerSong, setBeatsPerSong] = useState<number>(BEATS_PRESETS[1].value);
   const [bpm, setBpm] = useState<number | null>(null);
   const [pulse, setPulse] = useState(false);
@@ -229,9 +239,14 @@ export function PlaybackControls({
 
       {/* Speed + tap tempo */}
       <div className="flex flex-col gap-3 border-t border-border pt-4">
-        <span className="text-xs font-medium text-muted-foreground">
-          {t("controls.speed")}
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("controls.speed")}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {t("controls.shortcutsHint")}
+          </span>
+        </div>
 
         {/* Presets, manual steppers and tap tempo in one row. */}
         <div className="flex flex-wrap items-end gap-2">
@@ -345,6 +360,99 @@ export function PlaybackControls({
             </span>
           )}
         </div>
+      </div>
+
+      {/* Setlist markers */}
+      <div className="flex flex-col gap-3 border-t border-border pt-4">
+        <span className="text-xs font-medium text-muted-foreground">
+          {t("controls.setlist")}
+        </span>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="markerTitle"
+              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              {t("controls.markerTitle")}
+            </label>
+            <Input
+              id="markerTitle"
+              type="text"
+              value={markerTitle}
+              onChange={(e) => setMarkerTitle(e.target.value)}
+              placeholder={t("controls.markerTitlePlaceholder")}
+              disabled={numPages === 0}
+              className="h-9 w-40 px-2"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="markerPage"
+              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              {t("controls.markerPage")}
+            </label>
+            <Input
+              id="markerPage"
+              type="number"
+              min={1}
+              max={numPages || 1}
+              inputMode="numeric"
+              value={markerPage}
+              onChange={(e) => setMarkerPage(e.target.value)}
+              placeholder={numPages > 0 ? `1-${numPages}` : "—"}
+              disabled={numPages === 0}
+              className="h-9 w-20 px-2"
+            />
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={numPages === 0 || !markerTitle.trim() || !markerPage}
+            onClick={() => {
+              onAddMarker(markerTitle, Number(markerPage));
+              setMarkerTitle("");
+              setMarkerPage("");
+            }}
+            className="h-9"
+          >
+            <Plus className="size-4" />
+            <span className="hidden sm:inline">{t("controls.addMarker")}</span>
+          </Button>
+        </div>
+
+        {session.markers.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {session.markers.map((marker) => (
+              <div
+                key={marker.id}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-sm"
+              >
+                <button
+                  onClick={() => onSeekToMarker(marker.page)}
+                  className="flex items-center gap-1.5 font-medium hover:text-primary"
+                  title={t("controls.seekToMarker")}
+                >
+                  <Music className="size-3.5 text-muted-foreground" />
+                  <span className="max-w-[8rem] truncate">{marker.title}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {t("controls.markerPageShort", { page: marker.page })}
+                  </span>
+                </button>
+                <button
+                  onClick={() => onDeleteMarker(marker.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label={t("controls.deleteMarker")}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -20,6 +20,10 @@ const IMAGE_RE = /\.(png|jpe?g|webp|gif|avif)$/i;
 export type PdfViewerHandle = {
   /** Scroll the container to a normalized progress (0..1). */
   scrollToProgress: (progress: number) => void;
+  /** Scroll so the top of the requested page (1-indexed) aligns with the viewport top. */
+  scrollToPage: (page: number) => void;
+  /** Normalized progress for the top of the requested page (1-indexed). */
+  getProgressForPage: (page: number) => number;
   /** Read the current normalized scroll progress (0..1). */
   getCurrentProgress: () => number;
   /** Total pages in the loaded PDF (0 for images or while loading). */
@@ -42,6 +46,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   ref
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [numPages, setNumPages] = useState(0);
   const [pageWidth, setPageWidth] = useState(800);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +66,15 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return Math.max(1, el.scrollHeight - el.clientHeight);
   };
 
+  const getPageElement = (page: number) => pageRefs.current[page - 1];
+
+  const getProgressForPage = (page: number) => {
+    const el = scrollRef.current;
+    const pageEl = getPageElement(page);
+    if (!el || !pageEl) return 0;
+    return clamp01(pageEl.offsetTop / maxScroll());
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -69,6 +83,13 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         if (!el) return;
         el.scrollTop = clamp01(progress) * maxScroll();
       },
+      scrollToPage(page: number) {
+        const el = scrollRef.current;
+        const pageEl = getPageElement(page);
+        if (!el || !pageEl) return;
+        el.scrollTop = clamp01(pageEl.offsetTop / maxScroll()) * maxScroll();
+      },
+      getProgressForPage,
       getCurrentProgress() {
         const el = scrollRef.current;
         if (!el) return 0;
@@ -81,18 +102,32 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     []
   );
 
-  // Responsive page width based on the container.
+  // Responsive page width based on the container. Debounced to avoid thrashing
+  // PDF.js during mobile Safari orientation changes, which can abort in-flight
+  // page renders and surface as unhandled "Load failed" rejections.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const measure = () => {
-      const w = Math.min(900, el.clientWidth - 24);
-      setPageWidth(Math.max(280, w));
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const w = Math.min(900, el.clientWidth - 24);
+        setPageWidth((prev) => {
+          const next = Math.max(280, w);
+          // Only update when the change is meaningful; tiny fluctuations during
+          // scroll/chrome hide should not re-render the PDF pages.
+          return Math.abs(next - prev) > 8 ? next : prev;
+        });
+      }, 150);
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, []);
 
   // Block user-initiated scrolling on read-only viewers to prevent lag or
@@ -173,14 +208,16 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               {spinner}
             </div>
           )}
-          <img
-            src={fileUrl}
-            alt=""
-            style={{ width: pageWidth }}
-            onLoad={() => setLoading(false)}
-            onError={() => setError("image")}
-            className="h-auto rounded-lg shadow-[var(--shadow-lift)]"
-          />
+          <div ref={(el) => { pageRefs.current[0] = el; }}>
+            <img
+              src={fileUrl}
+              alt=""
+              style={{ width: pageWidth }}
+              onLoad={() => setLoading(false)}
+              onError={() => setError("image")}
+              className="h-auto rounded-lg shadow-[var(--shadow-lift)]"
+            />
+          </div>
         </div>
       ) : (
         <Document
@@ -200,14 +237,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         >
           <div className="flex flex-col items-center gap-3 px-2 pb-[55vh] pt-3 sm:px-4">
             {Array.from({ length: numPages }, (_, i) => (
-              <Page
+              <div
                 key={i}
-                pageNumber={i + 1}
-                width={pageWidth}
-                className="overflow-hidden rounded-lg shadow-[var(--shadow-lift)]"
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-              />
+                ref={(el) => { pageRefs.current[i] = el; }}
+              >
+                <Page
+                  pageNumber={i + 1}
+                  width={pageWidth}
+                  className="overflow-hidden rounded-lg shadow-[var(--shadow-lift)]"
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                />
+              </div>
             ))}
           </div>
         </Document>

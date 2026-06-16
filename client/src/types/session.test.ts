@@ -14,6 +14,7 @@ function makeState(over: Partial<SessionState> = {}): SessionState {
     updatedAt: 0,
     connectedClients: 0,
     createdAt: 0,
+    markers: [],
     ...over,
   };
 }
