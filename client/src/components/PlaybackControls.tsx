@@ -424,9 +424,9 @@ export function PlaybackControls({
           </Button>
         </div>
 
-        {session.markers.length > 0 && (
+        {(session.markers ?? []).length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {session.markers.map((marker) => (
+            {(session.markers ?? []).map((marker) => (
               <div
                 key={marker.id}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-sm"

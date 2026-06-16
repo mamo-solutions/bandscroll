@@ -216,13 +216,13 @@ export function AdminSessionControl() {
       title: title.trim(),
       page,
     };
-    const next = [...session.markers, marker].sort((a, b) => a.page - b.page);
+    const next = [...(session.markers ?? []), marker].sort((a, b) => a.page - b.page);
     setMarkers(next);
   }
 
   function deleteMarker(markerId: string) {
     if (!session) return;
-    const next = session.markers.filter((m) => m.id !== markerId);
+    const next = (session.markers ?? []).filter((m) => m.id !== markerId);
     setMarkers(next);
   }
 
