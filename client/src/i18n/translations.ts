@@ -39,6 +39,8 @@ export const de = {
     "Der Code {code} existiert nicht oder die Session wurde beendet.",
   "viewer.backAria": "Zurück zur Übersicht",
   "viewer.loading": "Lädt…",
+  "viewer.loadingFile": "Datei wird geladen…",
+  "viewer.fileError": "Datei konnte nicht geladen werden.",
   "viewer.endedBanner": "Diese Session wurde vom Host beendet.",
   "viewer.reconnecting": "Verbindung verloren – versuche neu zu verbinden…",
   "viewer.noPdf":
@@ -146,6 +148,8 @@ export const en: Record<TKey, string> = {
     "The code {code} does not exist or the session has ended.",
   "viewer.backAria": "Back to overview",
   "viewer.loading": "Loading…",
+  "viewer.loadingFile": "Loading file…",
+  "viewer.fileError": "Could not load file.",
   "viewer.endedBanner": "This session was ended by the host.",
   "viewer.reconnecting": "Connection lost – trying to reconnect…",
   "viewer.noPdf":
