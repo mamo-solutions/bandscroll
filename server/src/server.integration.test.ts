@@ -151,7 +151,11 @@ describe("REST API", () => {
     const { body } = await createSession(cookie);
 
     const form = new FormData();
-    form.append("pdf", new Blob(["\x89PNG\r\n"], { type: "image/png" }), "score.png");
+    form.append(
+      "pdf",
+      new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])], { type: "image/png" }),
+      "score.png"
+    );
     const updated = await json(
       await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
         method: "POST",

@@ -20,6 +20,9 @@ export function removeObsoleteUpload(
   const filename = extractUploadFilename(pdfUrl);
   if (!filename) return;
 
+  // Because this process is single-threaded and both the reference check and
+  // delete are synchronous, no other event can create a new reference between
+  // the two operations. The check is kept as a guard against manual state edits.
   const stillReferenced = listAdminSessions().some((s) => s.pdfUrl === pdfUrl);
   if (stillReferenced) return;
 

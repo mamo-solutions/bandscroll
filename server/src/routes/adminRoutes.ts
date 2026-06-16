@@ -1,9 +1,11 @@
 import { Router } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import type { Request, Response, NextFunction } from "express";
 import { env } from "../env.js";
 import { checkPassword, requireAdmin } from "../auth.js";
+import { validateUploadFile } from "../uploads/validate.js";
 import {
   createSession,
   deleteSession,
@@ -54,6 +56,29 @@ const upload = multer({
     cb(null, file.mimetype in ALLOWED_TYPES);
   },
 });
+
+// ---- Upload rate limiting (per admin session) ----
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_UPLOADS = 10;
+
+const uploadCounts = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimitUpload(req: Request, res: Response, next: NextFunction): void {
+  const key = req.sessionID ?? req.ip;
+  const now = Date.now();
+  let entry = uploadCounts.get(key);
+  if (!entry || entry.resetAt <= now) {
+    entry = { count: 0, resetAt: now + RATE_WINDOW_MS };
+  }
+  entry.count++;
+  uploadCounts.set(key, entry);
+
+  if (entry.count > RATE_MAX_UPLOADS) {
+    res.status(429).json({ error: "upload-rate-limit" });
+    return;
+  }
+  next();
+}
 
 // ---- Auth ----
 adminRouter.post("/login", (req, res) => {
@@ -106,34 +131,50 @@ adminRouter.get("/sessions/:id", (req, res) => {
   res.json(session);
 });
 
-adminRouter.post("/sessions/:id/pdf", upload.single("pdf"), (req, res) => {
-  const session = getSessionById(req.params.id);
-  if (!session) {
-    res.status(404).json({ error: "session-not-found" });
-    return;
-  }
-  if (!req.file) {
-    res.status(400).json({ error: "pdf-required-or-invalid" });
-    return;
-  }
-  const pdfUrl = `/uploads/${req.file.filename}`;
-  const oldPdfUrl = session.pdfUrl;
-  // A new document means a new song: reset to the top and pause so viewers
-  // don't keep extrapolating the previous song's scroll position.
-  const updated = updateSessionState(session.id, {
-    pdfUrl,
-    progress: 0,
-    playing: false,
-  });
-  if (updated) {
-    broadcastSessionState(updated);
-    broadcastSessionListUpdated();
-    if (oldPdfUrl && oldPdfUrl !== pdfUrl) {
-      removeObsoleteUpload(oldPdfUrl);
+adminRouter.post(
+  "/sessions/:id/pdf",
+  rateLimitUpload,
+  upload.single("pdf"),
+  (req, res) => {
+    const session = getSessionById(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: "session-not-found" });
+      return;
     }
+    if (!req.file) {
+      res.status(400).json({ error: "pdf-required-or-invalid" });
+      return;
+    }
+    if (!validateUploadFile(req.file.path, req.file.mimetype)) {
+      // The mimetype filter accepted the file based on client claims; the
+      // content did not match. Delete the saved file and reject the upload.
+      try {
+        unlinkSync(req.file.path);
+      } catch {
+        /* ignore cleanup errors */
+      }
+      res.status(400).json({ error: "pdf-content-mismatch" });
+      return;
+    }
+    const pdfUrl = `/uploads/${req.file.filename}`;
+    const oldPdfUrl = session.pdfUrl;
+    // A new document means a new song: reset to the top and pause so viewers
+    // don't keep extrapolating the previous song's scroll position.
+    const updated = updateSessionState(session.id, {
+      pdfUrl,
+      progress: 0,
+      playing: false,
+    });
+    if (updated) {
+      broadcastSessionState(updated);
+      broadcastSessionListUpdated();
+      if (oldPdfUrl && oldPdfUrl !== pdfUrl) {
+        removeObsoleteUpload(oldPdfUrl);
+      }
+    }
+    res.json(updated);
   }
-  res.json(updated);
-});
+);
 
 adminRouter.post("/sessions/:id/start", (req, res) => {
   const updated = updateSessionState(req.params.id, {

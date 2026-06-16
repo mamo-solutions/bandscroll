@@ -29,7 +29,9 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
 
   app.use(
     cors({
-      origin: true, // reflect request origin (dev: vite proxy / direct)
+      // In production only accept the configured public origin;
+      // in development reflect the request origin (Vite proxy / direct).
+      origin: env.isProduction ? env.PUBLIC_BASE_URL : true,
       credentials: true,
     })
   );
@@ -42,8 +44,16 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   app.use("/api/admin", adminRouter);
 
   // Uploaded files (PDF or image), read-only. Content-Type is inferred from the
-  // stored extension by express.static.
-  app.use("/uploads", express.static(env.UPLOAD_DIR));
+  // stored extension by express.static. nosniff prevents browsers from
+  // interpreting a polyglot file as HTML/JS if the extension is misleading.
+  app.use(
+    "/uploads",
+    (_req, res, next) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      next();
+    },
+    express.static(env.UPLOAD_DIR)
+  );
 
   // Serve the built React app in production (client dist copied into the image).
   const clientDist = resolve(process.cwd(), "../client/dist");
