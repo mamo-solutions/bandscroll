@@ -214,15 +214,13 @@ export function SessionViewer() {
         )}
       </div>
 
-      {/* Footer sits at the bottom of the page and auto-hides while playing. */}
-      <div
-        className={cn(
-          "shrink-0 z-20 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md transition-transform duration-300 ease-out",
-          chromeHidden && "translate-y-full"
-        )}
-      >
-        <Footer />
-      </div>
+      {/* Footer sits at the bottom of the page and is removed from layout while
+          playing so the PDF can use the full viewport height. */}
+      {!chromeHidden && (
+        <div className="shrink-0 z-20 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
+          <Footer />
+        </div>
+      )}
     </div>
   );
 }
