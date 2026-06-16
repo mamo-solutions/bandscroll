@@ -10,9 +10,11 @@ import { AdminSessionControl } from "./pages/AdminSessionControl";
 export default function App() {
   return (
     <Routes>
+      {/* Standalone, full-screen immersive reader (own chrome). */}
+      <Route path="/session/:code" element={<SessionViewer />} />
+
       <Route element={<Layout />}>
         <Route path="/" element={<PublicHome />} />
-        <Route path="/session/:code" element={<SessionViewer />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route
           path="/admin"

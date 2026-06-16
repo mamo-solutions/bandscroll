@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, FileX2, Loader2, OctagonX } from "lucide-react";
+import { ArrowLeft, AudioLines, FileX2, Loader2, OctagonX } from "lucide-react";
 import { api } from "@/api/client";
 import { getSocket } from "@/sockets/socket";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { effectiveProgress, type SessionState } from "@/types/session";
@@ -18,6 +20,7 @@ export function SessionViewer() {
   const [notFound, setNotFound] = useState(false);
   const [ended, setEnded] = useState(false);
   const [uiProgress, setUiProgress] = useState(0);
+  const [chromeHidden, setChromeHidden] = useState(false);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
@@ -100,9 +103,33 @@ export function SessionViewer() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  // ---- Immersive chrome: while playing, auto-hide the bar + footer after a
+  // short idle so the score gets the full screen. Any interaction reveals them
+  // again (and re-arms the timer), so the user is never trapped.
+  const playing = session?.playing ?? false;
+  useEffect(() => {
+    if (!playing) {
+      setChromeHidden(false);
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      setChromeHidden(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setChromeHidden(true), 2500);
+    };
+    arm();
+    const events = ["pointerdown", "pointermove", "keydown", "touchstart"];
+    events.forEach((e) => window.addEventListener(e, arm, { passive: true }));
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, arm));
+    };
+  }, [playing]);
+
   if (notFound) {
     return (
-      <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-4 px-4 py-16 text-center">
         <span className="flex size-14 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
           <FileX2 className="size-7" />
         </span>
@@ -125,44 +152,54 @@ export function SessionViewer() {
   const pdfUrl = session?.pdfUrl || "";
 
   return (
-    <div className="flex h-[calc(100dvh_-_4rem)] flex-col">
-      {/* Sub-header */}
-      <div className="sticky top-16 z-30 border-b border-border/70 bg-background/85 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Button
-              asChild
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              aria-label={t("viewer.backAria")}
-            >
-              <Link to="/">
-                <ArrowLeft />
-              </Link>
-            </Button>
-            <div className="min-w-0">
-              <p className="truncate font-heading font-semibold leading-tight">
-                {session?.title ?? t("viewer.loading")}
-              </p>
-              <span className="font-mono text-xs text-muted-foreground">{code}</span>
-            </div>
+    <div className="relative h-dvh w-full overflow-hidden bg-muted/40">
+      {/* Document fills the whole screen; chrome floats on top. */}
+      <div className="absolute inset-0">
+        {pdfUrl ? (
+          <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
+        ) : (
+          <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
+            {t("viewer.noPdf")}
+          </div>
+        )}
+      </div>
+
+      {/* Single merged bar: brand/home + title + status + progress. Auto-hides
+          while playing. */}
+      <header
+        className={cn(
+          "absolute inset-x-0 top-0 z-20 border-b border-border/60 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-transform duration-300 ease-out",
+          chromeHidden && "-translate-y-full"
+        )}
+      >
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-3 sm:px-6">
+          <Link
+            to="/"
+            aria-label={t("viewer.backAria")}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)] transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <AudioLines className="size-5" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-heading text-sm font-semibold leading-tight sm:text-base">
+              {session?.title ?? t("viewer.loading")}
+            </p>
+            <span className="font-mono text-xs text-muted-foreground">{code}</span>
           </div>
           <ConnectionStatus connected={connected} playing={session?.playing} />
         </div>
 
-        {/* Live progress */}
         <div className="h-1 w-full bg-muted">
           <div
             className="h-full bg-primary transition-[width] duration-200 ease-linear"
             style={{ width: `${Math.round(uiProgress * 100)}%` }}
           />
         </div>
-      </div>
+      </header>
 
-      {/* Banners */}
+      {/* Status banners (kept visible — they only appear on problems). */}
       {(ended || !connected) && (
-        <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6">
+        <div className="absolute inset-x-0 top-[calc(3.75rem+env(safe-area-inset-top))] z-30 mx-auto w-full max-w-6xl px-3 sm:px-6">
           {ended && (
             <Banner tone="muted" icon={<OctagonX className="size-4" />}>
               {t("viewer.endedBanner")}
@@ -176,17 +213,14 @@ export function SessionViewer() {
         </div>
       )}
 
-      {/* PDF */}
-      <div className="relative mx-auto w-full max-w-6xl min-h-0 flex-1 px-2 py-3 sm:px-6">
-        <div className="h-full overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-soft)]">
-          {pdfUrl ? (
-            <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
-          ) : (
-            <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
-              {t("viewer.noPdf")}
-            </div>
-          )}
-        </div>
+      {/* Footer overlay — auto-hides with the bar. */}
+      <div
+        className={cn(
+          "absolute inset-x-0 bottom-0 z-20 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md transition-transform duration-300 ease-out",
+          chromeHidden && "translate-y-full"
+        )}
+      >
+        <Footer />
       </div>
     </div>
   );
