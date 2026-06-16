@@ -7,3 +7,4 @@ caddy_data/
 caddy_config/
 *.log
 .DS_Store
+.opencode/skills
