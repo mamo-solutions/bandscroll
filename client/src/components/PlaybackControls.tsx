@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Crosshair,
   Gauge,
+  Minus,
   Pause,
   Play,
+  Plus,
   SkipBack,
+  SlidersHorizontal,
   Square,
   Timer,
   Users,
@@ -14,14 +17,15 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
-import type { TKey } from "@/i18n/translations";
 import type { SessionState } from "@/types/session";
 
-const SPEED_PRESETS: { key: TKey; value: number }[] = [
-  { key: "controls.slow", value: 0.0005 },
-  { key: "controls.medium", value: 0.001 },
-  { key: "controls.fast", value: 0.002 },
-];
+// progress/second across the whole document. Slowest → fastest; the fastest
+// here is the old "slow" preset (a full PDF can hold 40+ songs, so even this is
+// gentle). Fine-tune beyond these with the Manual +/- steppers.
+const SPEED_PRESETS = [0.00005, 0.0001, 0.0002, 0.0003, 0.0005];
+const SPEED_STEP = 0.00002;
+const SPEED_MIN = 0.00001;
+const SPEED_MAX = 0.002;
 
 type Props = {
   session: SessionState;
@@ -50,15 +54,33 @@ export function PlaybackControls({
 }: Props) {
   const { t } = useI18n();
   const [duration, setDuration] = useState("");
+  const [manual, setManual] = useState(false);
+
+  // Track the latest intended speed so rapid +/- clicks accumulate even before
+  // the server broadcast updates session.speed.
+  const speedRef = useRef(session.speed);
+  useEffect(() => {
+    speedRef.current = session.speed;
+  }, [session.speed]);
+
+  function applySpeed(value: number) {
+    speedRef.current = value;
+    onSetSpeed(value);
+  }
 
   function applyDuration() {
     const seconds = Number(duration);
-    if (seconds > 0) onSetSpeed(1 / seconds);
+    if (seconds > 0) applySpeed(1 / seconds);
+  }
+
+  function nudge(delta: number) {
+    const next = Math.min(SPEED_MAX, Math.max(SPEED_MIN, speedRef.current + delta));
+    applySpeed(Number(next.toFixed(5)));
   }
 
   const activePreset = SPEED_PRESETS.find(
-    (p) => Math.abs(p.value - session.speed) < 1e-6
-  )?.value;
+    (v) => Math.abs(v - session.speed) < 1e-7
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -68,7 +90,7 @@ export function PlaybackControls({
           {(liveProgress * 100).toFixed(1)}%
         </Stat>
         <Stat icon={<Gauge className="size-4" />} label={t("controls.tempo")}>
-          {session.speed.toFixed(4)}
+          {session.speed.toFixed(5)}
         </Stat>
         <Stat
           icon={
@@ -128,30 +150,71 @@ export function PlaybackControls({
       </div>
 
       {/* Speed */}
-      <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t("controls.speed")}
-          </span>
+      <div className="flex flex-col gap-3 border-t border-border pt-4">
+        <span className="text-xs font-medium text-muted-foreground">
+          {t("controls.speed")}
+        </span>
+
+        {/* Presets (slow → fast) + Manual toggle */}
+        <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-lg bg-muted p-1">
-            {SPEED_PRESETS.map((p) => (
+            {SPEED_PRESETS.map((value, i) => (
               <button
-                key={p.value}
-                onClick={() => onSetSpeed(p.value)}
+                key={value}
+                onClick={() => applySpeed(value)}
+                aria-label={`${t("controls.speed")} ${i + 1}`}
                 className={cn(
-                  "rounded-md px-3.5 py-2 text-sm font-medium transition-colors",
-                  activePreset === p.value
+                  "w-9 rounded-md py-2 text-sm font-semibold tabular-nums transition-colors",
+                  activePreset === value
                     ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {t(p.key)}
+                {i + 1}
               </button>
             ))}
           </div>
+
+          <Button
+            variant={manual ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setManual((m) => !m)}
+            aria-pressed={manual}
+          >
+            <SlidersHorizontal />
+            {t("controls.manual")}
+          </Button>
         </div>
 
-        <div className="flex items-end gap-2">
+        {/* Manual fine-tune steppers */}
+        {manual && (
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => nudge(-SPEED_STEP)}
+              disabled={session.speed <= SPEED_MIN}
+              aria-label={t("controls.slower")}
+            >
+              <Minus />
+            </Button>
+            <span className="min-w-20 text-center font-heading text-lg font-semibold tabular-nums">
+              {session.speed.toFixed(5)}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => nudge(SPEED_STEP)}
+              disabled={session.speed >= SPEED_MAX}
+              aria-label={t("controls.faster")}
+            >
+              <Plus />
+            </Button>
+          </div>
+        )}
+
+        {/* Set by song length (1 / seconds) */}
+        <div className="flex items-end gap-2 pt-1">
           <div className="flex flex-col gap-2">
             <label
               htmlFor="dur"
