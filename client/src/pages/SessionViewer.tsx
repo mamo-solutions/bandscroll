@@ -8,6 +8,7 @@ import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { reportError } from "@/lib/errorLog";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { effectiveProgress, type SessionState } from "@/types/session";
@@ -85,17 +86,26 @@ export function SessionViewer() {
   useEffect(() => {
     let raf = 0;
     let frame = 0;
+    let loggedError = false;
     const tick = () => {
-      const s = stateRef.current;
-      const viewer = viewerRef.current;
-      if (s && viewer) {
-        const target = effectiveProgress(s);
-        const current = displayedRef.current;
-        const diff = target - current;
-        const next = Math.abs(diff) > 0.04 ? target : current + diff * 0.18;
-        displayedRef.current = next;
-        viewer.scrollToProgress(next);
-        if (frame++ % 10 === 0) setUiProgress(next);
+      try {
+        const s = stateRef.current;
+        const viewer = viewerRef.current;
+        if (s && viewer) {
+          const target = effectiveProgress(s);
+          const current = displayedRef.current;
+          const diff = target - current;
+          const next = Math.abs(diff) > 0.04 ? target : current + diff * 0.18;
+          displayedRef.current = next;
+          viewer.scrollToProgress(next);
+          if (frame++ % 10 === 0) setUiProgress(next);
+        }
+      } catch (err) {
+        // Keep the loop alive; report the first occurrence only (avoid 60fps spam).
+        if (!loggedError) {
+          loggedError = true;
+          reportError("viewer.syncLoop", err);
+        }
       }
       raf = requestAnimationFrame(tick);
     };

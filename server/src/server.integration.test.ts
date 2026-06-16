@@ -92,6 +92,15 @@ describe("REST API", () => {
     expect((await json(res)).ok).toBe(true);
   });
 
+  it("accepts client error reports (204)", async () => {
+    const res = await fetch(`${base}/api/client-log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: "test", message: "boom", stack: "x" }),
+    });
+    expect(res.status).toBe(204);
+  });
+
   it("rejects admin routes without a session cookie", async () => {
     const res = await fetch(`${base}/api/admin/sessions`);
     expect(res.status).toBe(401);
