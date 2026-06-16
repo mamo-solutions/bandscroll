@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Loader2 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
 
 // Errors-only verbosity: silences harmless "TT: undefined function" font
@@ -21,16 +22,23 @@ export type PdfViewerHandle = {
   scrollToProgress: (progress: number) => void;
   /** Read the current normalized scroll progress (0..1). */
   getCurrentProgress: () => number;
+  /** Total pages in the loaded PDF (0 for images or while loading). */
+  readonly numPages: number;
 };
 
 type Props = {
   fileUrl: string;
   /** Called (already DOM-throttled by rAF) when the user scrolls manually. */
   onUserScroll?: (progress: number) => void;
+  /** Called when a PDF finishes loading with its page count. */
+  onDocumentLoad?: (numPages: number) => void;
+  /** When true, all user-initiated scroll input (wheel, touch, keys) is blocked.
+   *  Programmatic scrolling via scrollToProgress still works. */
+  blockUserScroll?: boolean;
 };
 
 export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
-  { fileUrl, onUserScroll },
+  { fileUrl, onUserScroll, onDocumentLoad, blockUserScroll },
   ref
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -66,6 +74,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         if (!el) return 0;
         return clamp01(el.scrollTop / maxScroll());
       },
+      get numPages() {
+        return numPages;
+      },
     }),
     []
   );
@@ -83,6 +94,44 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Block user-initiated scrolling on read-only viewers to prevent lag or
+  // de-sync from competing with the conductor's auto-scroll.
+  useEffect(() => {
+    if (!blockUserScroll) return;
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const prevent = (e: Event) => e.preventDefault();
+    const preventKey = (e: KeyboardEvent) => {
+      if (
+        [
+          "ArrowUp",
+          "ArrowDown",
+          "ArrowLeft",
+          "ArrowRight",
+          "PageUp",
+          "PageDown",
+          "Home",
+          "End",
+          " ",
+          "Spacebar",
+        ].includes(e.key)
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    el.addEventListener("wheel", prevent, { passive: false });
+    el.addEventListener("touchmove", prevent, { passive: false });
+    window.addEventListener("keydown", preventKey);
+
+    return () => {
+      el.removeEventListener("wheel", prevent);
+      el.removeEventListener("touchmove", prevent);
+      window.removeEventListener("keydown", preventKey);
+    };
+  }, [blockUserScroll]);
 
   const handleScroll = useCallback(() => {
     if (!onUserScroll || rafPending.current) return;
@@ -106,7 +155,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   return (
     <div
-      className="scrollbar-warm relative h-full overflow-y-auto bg-muted/40"
+      className={cn(
+        "relative h-full bg-muted/40",
+        blockUserScroll
+          ? "overflow-hidden overscroll-none touch-none"
+          : "scrollbar-warm overflow-y-auto"
+      )}
       ref={scrollRef}
       onScroll={handleScroll}
     >
@@ -135,6 +189,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           onLoadSuccess={({ numPages }) => {
             setNumPages(numPages);
             setLoading(false);
+            onDocumentLoad?.(numPages);
           }}
           onLoadError={(e) => {
             setError(e.message);

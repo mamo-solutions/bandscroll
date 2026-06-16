@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, LogOut } from "lucide-react";
 import { auth } from "@/api/auth";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
 
 export function AdminNav({
@@ -9,7 +10,7 @@ export function AdminNav({
   subtitle,
   showDashboard = true,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   showDashboard?: boolean;
 }) {
@@ -23,15 +24,17 @@ export function AdminNav({
 
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="truncate font-heading text-2xl font-bold tracking-tight">
-          {title}
-        </h1>
-        {subtitle && (
-          <p className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</p>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
+      {title && (
+        <div className="min-w-0">
+          <h1 className="truncate font-heading text-2xl font-bold tracking-tight">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</p>
+          )}
+        </div>
+      )}
+      <div className={cn("flex shrink-0 items-center gap-2", !title && "ml-auto")}>
         {showDashboard && (
           <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
             <LayoutDashboard />

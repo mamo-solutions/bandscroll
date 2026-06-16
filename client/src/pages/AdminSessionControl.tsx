@@ -1,14 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { FileUp, FileWarning, Loader2, RefreshCw } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  CircleDot,
+  FileEdit,
+  FileUp,
+  FileWarning,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  Pause,
+  Play,
+  Radio,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { api } from "@/api/client";
 import { getSocket } from "@/sockets/socket";
-import { AdminNav } from "@/components/AdminNav";
+import { auth } from "@/api/auth";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { PlaybackControls } from "@/components/PlaybackControls";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
-import { SessionStatusBadge } from "@/components/SessionStatusBadge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
@@ -16,11 +29,13 @@ import { effectiveProgress, type SessionState } from "@/types/session";
 
 export function AdminSessionControl() {
   const { id = "" } = useParams();
+  const navigate = useNavigate();
   const { t } = useI18n();
   const [session, setSession] = useState<SessionState | null>(null);
   const [connected, setConnected] = useState(false);
   const [uiProgress, setUiProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [numPages, setNumPages] = useState(0);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
@@ -137,6 +152,11 @@ export function AdminSessionControl() {
     socket.emit("admin-set-speed", { sessionId: id, speed });
   }
 
+  async function handleLogout() {
+    await auth.logout();
+    navigate("/admin/login", { replace: true });
+  }
+
   // Swap the PDF mid-session (e.g. choose another song). The server resets
   // progress + pauses and broadcasts, so all viewers reload the new document.
   async function changePdf(e: React.ChangeEvent<HTMLInputElement>) {
@@ -165,15 +185,53 @@ export function AdminSessionControl() {
 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-      <AdminNav title={session.title} />
-
       <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h1 className="min-w-0 max-w-[40%] truncate font-heading text-xl font-bold sm:max-w-[50%]">
+          {session.title}
+        </h1>
+
         <span className="rounded-lg bg-secondary px-2.5 py-1 font-mono text-sm font-semibold text-secondary-foreground">
           {session.code}
         </span>
-        <SessionStatusBadge status={session.status} />
+
+        {/* Status icon only */}
+        <span
+          className={cn(
+            "inline-flex size-8 items-center justify-center rounded-full",
+            session.status === "live" && "bg-success/15 text-success",
+            session.status === "draft" && "bg-warning/15 text-warning",
+            session.status === "ended" && "bg-muted text-muted-foreground"
+          )}
+          title={t(`status.${session.status}` as const)}
+        >
+          {session.status === "live" && <Radio className="size-4" />}
+          {session.status === "draft" && <FileEdit className="size-4" />}
+          {session.status === "ended" && <CircleDot className="size-4" />}
+        </span>
+
+        {/* Connection + play/pause icons only */}
+        <span
+          className={cn(
+            "inline-flex size-8 items-center justify-center rounded-full",
+            connected ? "bg-success/15 text-success" : "bg-destructive/12 text-destructive"
+          )}
+          title={connected ? t("conn.connected") : t("conn.disconnected")}
+        >
+          {connected ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}
+        </span>
+        {connected && (
+          <span
+            className={cn(
+              "inline-flex size-8 items-center justify-center rounded-full",
+              session.playing ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
+            )}
+            title={session.playing ? t("conn.playing") : t("conn.paused")}
+          >
+            {session.playing ? <Play className="size-4" /> : <Pause className="size-4" />}
+          </span>
+        )}
+
         <div className="ml-auto flex items-center gap-2">
-          <ConnectionStatus connected={connected} playing={session.playing} />
           <input
             ref={pdfInput}
             type="file"
@@ -202,6 +260,16 @@ export function AdminSessionControl() {
                   : t("control.addPdf")}
             </span>
           </Button>
+
+          <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+            <LayoutDashboard />
+            <span className="hidden sm:inline">{t("nav.dashboard")}</span>
+          </Button>
+
+          <Button variant="ghost" size="sm" onClick={handleLogout}>
+            <LogOut />
+            <span className="hidden sm:inline">{t("nav.logout")}</span>
+          </Button>
         </div>
       </div>
 
@@ -216,6 +284,7 @@ export function AdminSessionControl() {
               onUserScroll={(p) => {
                 if (!stateRef.current?.playing) liveProgressRef.current = p;
               }}
+              onDocumentLoad={setNumPages}
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
@@ -233,6 +302,7 @@ export function AdminSessionControl() {
           session={session}
           connectedClients={session.connectedClients}
           liveProgress={uiProgress}
+          numPages={numPages}
           onPlay={play}
           onPause={pause}
           onStop={stop}

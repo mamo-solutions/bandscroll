@@ -206,7 +206,7 @@ export function SessionViewer() {
           sticky/overlaying the score. */}
       <div className="relative flex-1 overflow-hidden">
         {pdfUrl ? (
-          <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} />
+          <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} blockUserScroll />
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
             {t("viewer.noPdf")}
