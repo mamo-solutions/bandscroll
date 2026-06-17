@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { HeaderSlotProvider } from "./components/HeaderSlot";
 import { RequireAdminAuth } from "./components/RequireAdminAuth";
 import { PublicHome } from "./pages/PublicHome";
 import { SessionViewer } from "./pages/SessionViewer";
@@ -9,7 +10,8 @@ import { AdminSessionControl } from "./pages/AdminSessionControl";
 
 export default function App() {
   return (
-    <Routes>
+    <HeaderSlotProvider>
+      <Routes>
       {/* Standalone, full-screen immersive reader (own chrome). */}
       <Route path="/session/:code" element={<SessionViewer />} />
 
@@ -35,5 +37,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </HeaderSlotProvider>
   );
 }

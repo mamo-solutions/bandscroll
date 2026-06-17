@@ -20,6 +20,7 @@ import { getSocket } from "@/sockets/socket";
 import { auth } from "@/api/auth";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { PlaybackControls } from "@/components/PlaybackControls";
+import { useHeaderSlot } from "@/components/HeaderSlot";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -85,6 +86,103 @@ export function AdminSessionControl() {
       socket.off("admin-error", onError);
     };
   }, [id]);
+
+  // ---- Project session header into the shared layout header bar ----
+  const { setNode } = useHeaderSlot();
+  useEffect(() => {
+    if (!session) {
+      setNode(null);
+      return;
+    }
+    setNode(
+      <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+        <h1 className="hidden truncate font-heading text-base font-semibold sm:block sm:max-w-[12rem] md:max-w-[18rem] lg:max-w-[24rem]">
+          {session.title}
+        </h1>
+
+        <span className="rounded-lg bg-secondary px-2 py-0.5 font-mono text-xs font-semibold text-secondary-foreground">
+          {session.code}
+        </span>
+
+        <span
+          className={cn(
+            "inline-flex size-7 items-center justify-center rounded-full",
+            session.status === "live" && "bg-success/15 text-success",
+            session.status === "draft" && "bg-warning/15 text-warning",
+            session.status === "ended" && "bg-muted text-muted-foreground"
+          )}
+          title={t(`status.${session.status}` as const)}
+        >
+          {session.status === "live" && <Radio className="size-3.5" />}
+          {session.status === "draft" && <FileEdit className="size-3.5" />}
+          {session.status === "ended" && <CircleDot className="size-3.5" />}
+        </span>
+
+        <span
+          className={cn(
+            "inline-flex size-7 items-center justify-center rounded-full",
+            connected ? "bg-success/15 text-success" : "bg-destructive/12 text-destructive"
+          )}
+          title={connected ? t("conn.connected") : t("conn.disconnected")}
+        >
+          {connected ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
+        </span>
+        {connected && (
+          <span
+            className={cn(
+              "inline-flex size-7 items-center justify-center rounded-full",
+              session.playing ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
+            )}
+            title={session.playing ? t("conn.playing") : t("conn.paused")}
+          >
+            {session.playing ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+          </span>
+        )}
+
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={pdfInput}
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,image/avif"
+            className="hidden"
+            onChange={changePdf}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={() => pdfInput.current?.click()}
+          >
+            {uploading ? (
+              <Loader2 className="animate-spin" />
+            ) : session.pdfUrl ? (
+              <RefreshCw />
+            ) : (
+              <FileUp />
+            )}
+            <span className="hidden sm:inline">
+              {uploading
+                ? t("control.uploading")
+                : session.pdfUrl
+                  ? t("control.changePdf")
+                  : t("control.addPdf")}
+            </span>
+          </Button>
+
+          <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+            <LayoutDashboard />
+            <span className="hidden sm:inline">{t("nav.dashboard")}</span>
+          </Button>
+
+          <Button variant="ghost" size="sm" onClick={handleLogout}>
+            <LogOut />
+            <span className="hidden sm:inline">{t("nav.logout")}</span>
+          </Button>
+        </div>
+      </div>
+    );
+    return () => setNode(null);
+  }, [session, connected, uploading, setNode, t, navigate, pdfInput]);
 
   // ---- Auto-scroll loop: when playing, follow the computed progress ----
   useEffect(() => {
@@ -264,96 +362,8 @@ export function AdminSessionControl() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h1 className="min-w-0 max-w-[40%] truncate font-heading text-xl font-bold sm:max-w-[50%]">
-          {session.title}
-        </h1>
-
-        <span className="rounded-lg bg-secondary px-2.5 py-1 font-mono text-sm font-semibold text-secondary-foreground">
-          {session.code}
-        </span>
-
-        {/* Status icon only */}
-        <span
-          className={cn(
-            "inline-flex size-8 items-center justify-center rounded-full",
-            session.status === "live" && "bg-success/15 text-success",
-            session.status === "draft" && "bg-warning/15 text-warning",
-            session.status === "ended" && "bg-muted text-muted-foreground"
-          )}
-          title={t(`status.${session.status}` as const)}
-        >
-          {session.status === "live" && <Radio className="size-4" />}
-          {session.status === "draft" && <FileEdit className="size-4" />}
-          {session.status === "ended" && <CircleDot className="size-4" />}
-        </span>
-
-        {/* Connection + play/pause icons only */}
-        <span
-          className={cn(
-            "inline-flex size-8 items-center justify-center rounded-full",
-            connected ? "bg-success/15 text-success" : "bg-destructive/12 text-destructive"
-          )}
-          title={connected ? t("conn.connected") : t("conn.disconnected")}
-        >
-          {connected ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}
-        </span>
-        {connected && (
-          <span
-            className={cn(
-              "inline-flex size-8 items-center justify-center rounded-full",
-              session.playing ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
-            )}
-            title={session.playing ? t("conn.playing") : t("conn.paused")}
-          >
-            {session.playing ? <Play className="size-4" /> : <Pause className="size-4" />}
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          <input
-            ref={pdfInput}
-            type="file"
-            accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,image/avif"
-            className="hidden"
-            onChange={changePdf}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={uploading}
-            onClick={() => pdfInput.current?.click()}
-          >
-            {uploading ? (
-              <Loader2 className="animate-spin" />
-            ) : session.pdfUrl ? (
-              <RefreshCw />
-            ) : (
-              <FileUp />
-            )}
-            <span className="hidden sm:inline">
-              {uploading
-                ? t("control.uploading")
-                : session.pdfUrl
-                  ? t("control.changePdf")
-                  : t("control.addPdf")}
-            </span>
-          </Button>
-
-          <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
-            <LayoutDashboard />
-            <span className="hidden sm:inline">{t("nav.dashboard")}</span>
-          </Button>
-
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut />
-            <span className="hidden sm:inline">{t("nav.logout")}</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* PDF preview */}
+    <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-8 pt-0 sm:px-6">
+      {/* PDF preview -- starts right below the sticky header */}
       <Card className="mb-5 overflow-hidden p-0">
         <div className="h-[48vh] sm:h-[58vh]">
           {session.pdfUrl ? (
