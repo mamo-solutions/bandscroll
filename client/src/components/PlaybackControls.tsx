@@ -186,19 +186,19 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
         <Stat
           icon={<Gauge className="size-4" />}
           label={t("controls.tempo")}
-          className="min-w-[6.5rem] flex-1"
+          className="min-w-[6.5rem] flex-1 lg:flex-none lg:w-1/6"
         >
           {session.speed.toFixed(6)}
         </Stat>
         <Stat
           icon={<Users className="size-4" />}
           label={t("controls.viewers")}
-          className="min-w-[6.5rem] flex-1"
+          className="min-w-[6.5rem] flex-1 lg:flex-none lg:w-1/6"
         >
           {connectedClients}
         </Stat>
 
-        <div className="flex min-w-[16rem] flex-1 gap-2.5">
+        <div className="flex min-w-[16rem] flex-1 gap-2.5 lg:flex-none lg:w-2/3">
           {session.playing ? (
             <Button
               variant="warning"
