@@ -58,9 +58,24 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   // Serve the built React app in production (client dist copied into the image).
   const clientDist = resolve(process.cwd(), "../client/dist");
   if (existsSync(clientDist)) {
-    app.use(express.static(clientDist));
+    app.use(
+      express.static(clientDist, {
+        setHeaders: (res, filePath) => {
+          if (/[\\/]assets[\\/]/.test(filePath)) {
+            // Content-hashed build assets (assets/*) — safe to cache forever.
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          } else {
+            // index.html, sw.js, registerSW.js, manifest — must revalidate every
+            // load so a new deploy (and bug fixes) reach clients immediately
+            // instead of being served stale from cache.
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      })
+    );
     // SPA fallback for client-side routing (anything not /api or /uploads).
     app.get(/^\/(?!api|uploads).*/, (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(resolve(clientDist, "index.html"));
     });
   }

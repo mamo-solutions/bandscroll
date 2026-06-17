@@ -18,6 +18,13 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
+      workbox: {
+        // Take over immediately and drop stale precaches so clients run the
+        // newest build as soon as a new service worker is found.
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: "BandScroll",
         short_name: "BandScroll",

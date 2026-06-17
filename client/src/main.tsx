@@ -6,12 +6,16 @@ import App from "./App";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installGlobalErrorHandlers } from "./lib/errorLog";
+import { installPwaUpdater } from "./lib/pwaUpdate";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import "./styles.css";
 
 // Capture async / rAF / event-handler errors that React boundaries can't see.
 installGlobalErrorHandlers();
+
+// Keep the PWA's cached code up to date (poll for new service worker versions).
+installPwaUpdater();
 
 // Configure the PDF.js worker (bundled with pdfjs-dist via Vite).
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
