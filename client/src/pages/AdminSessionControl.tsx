@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
+import { useWakeLock } from "@/lib/useWakeLock";
 import { clamp01, effectiveProgressFromElapsed, type SessionState, type SongMarker } from "@/types/session";
 
 export function AdminSessionControl() {
@@ -50,6 +51,7 @@ export function AdminSessionControl() {
   const KB_SPEED_MAX = 0.002;
 
   useDocumentTitle(session ? session.title : t("control.loading"));
+  useWakeLock(session?.playing ?? false);
 
   useEffect(() => {
     stateRef.current = session;

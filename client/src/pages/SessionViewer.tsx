@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/errorLog";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
+import { useWakeLock } from "@/lib/useWakeLock";
 import { effectiveProgressFromElapsed, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
@@ -29,6 +30,7 @@ export function SessionViewer() {
   const receivedAtRef = useRef<number>(Date.now());
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
+  useWakeLock(session?.playing ?? false);
 
   useEffect(() => {
     stateRef.current = session;
