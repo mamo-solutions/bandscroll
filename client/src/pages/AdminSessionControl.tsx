@@ -51,7 +51,7 @@ export function AdminSessionControl() {
   const KB_SPEED_MAX = 0.002;
 
   useDocumentTitle(session ? session.title : t("control.loading"));
-  useWakeLock(session?.playing ?? false);
+  useWakeLock(true);
 
   useEffect(() => {
     stateRef.current = session;

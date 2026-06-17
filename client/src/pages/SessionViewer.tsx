@@ -30,7 +30,7 @@ export function SessionViewer() {
   const receivedAtRef = useRef<number>(Date.now());
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
-  useWakeLock(session?.playing ?? false);
+  useWakeLock(true);
 
   useEffect(() => {
     stateRef.current = session;
