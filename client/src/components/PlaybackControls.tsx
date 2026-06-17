@@ -181,24 +181,24 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Control bar: info cards + transport in one row, optimized for tablet portrait. */}
-      <div className="flex flex-wrap items-stretch gap-2.5">
+      {/* Control bar: info cards + transport in one row at every resolution. */}
+      <div className="flex flex-nowrap items-stretch gap-2.5">
         <Stat
           icon={<Gauge className="size-4" />}
           label={t("controls.tempo")}
-          className="min-w-[6.5rem] flex-1 lg:flex-none lg:w-1/6"
+          className="min-w-0 flex-1"
         >
           {session.speed.toFixed(6)}
         </Stat>
         <Stat
           icon={<Users className="size-4" />}
           label={t("controls.viewers")}
-          className="min-w-[6.5rem] flex-1 lg:flex-none lg:w-1/6"
+          className="min-w-0 flex-1"
         >
           {connectedClients}
         </Stat>
 
-        <div className="flex min-w-[16rem] flex-1 gap-2.5 lg:flex-none lg:w-2/3">
+        <div className="flex min-w-0 flex-[4] gap-2.5">
           {session.playing ? (
             <Button
               variant="warning"
@@ -508,7 +508,7 @@ function Stat({
       </div>
       <div
         className={cn(
-          "mt-0.5 font-heading text-lg font-semibold tabular-nums",
+          "mt-0.5 truncate font-heading text-lg font-semibold tabular-nums",
           tone === "success" && "text-success",
           tone === "warning" && "text-warning"
         )}
