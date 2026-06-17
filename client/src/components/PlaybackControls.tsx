@@ -24,7 +24,7 @@ import type { SessionState } from "@/types/session";
 // here is the old "slow" preset (a full PDF can hold 40+ songs, so even this is
 // gentle). Fine-tune beyond these with the Manual +/- steppers.
 const SPEED_PRESETS = [0.00005, 0.0001, 0.0002, 0.0003, 0.0005];
-const SPEED_STEP = 0.00002;
+const SPEED_STEP = 0.000005;
 const SPEED_MIN = 0.00001;
 const SPEED_MAX = 0.002;
 
@@ -114,7 +114,7 @@ export function PlaybackControls({
 
   function nudge(delta: number) {
     const next = Math.min(SPEED_MAX, Math.max(SPEED_MIN, speedRef.current + delta));
-    applySpeed(Number(next.toFixed(5)));
+    applySpeed(Number(next.toFixed(6)));
   }
 
   function calculateSpeedFromBpm(detectedBpm: number): number {
@@ -178,7 +178,7 @@ export function PlaybackControls({
           {(liveProgress * 100).toFixed(1)}%
         </Stat>
         <Stat icon={<Gauge className="size-4" />} label={t("controls.tempo")}>
-          {session.speed.toFixed(5)}
+          {session.speed.toFixed(6)}
         </Stat>
         <Stat
           icon={
@@ -280,7 +280,7 @@ export function PlaybackControls({
               <Minus className="size-4" />
             </Button>
             <span className="min-w-[4.5rem] text-center text-sm font-semibold tabular-nums">
-              {session.speed.toFixed(5)}
+              {session.speed.toFixed(6)}
             </span>
             <Button
               variant="ghost"

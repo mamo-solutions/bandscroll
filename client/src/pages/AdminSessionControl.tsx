@@ -43,7 +43,7 @@ export function AdminSessionControl() {
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SEEK_STEP = 0.02;
-  const KB_SPEED_STEP = 0.00002;
+  const KB_SPEED_STEP = 0.000005;
   const KB_SPEED_MIN = 0.00001;
   const KB_SPEED_MAX = 0.002;
 
