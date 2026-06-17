@@ -126,6 +126,8 @@ export const de = {
   "control.changePdf": "Datei wechseln",
   "control.addPdf": "Datei hinzufügen",
   "control.uploading": "Lädt hoch…",
+  "control.disconnected": "Verbindung verloren. Lade die Seite neu, um sie wieder zu steuern.",
+  "control.reload": "Neu laden",
 } as const;
 
 export type TKey = keyof typeof de;
@@ -248,6 +250,8 @@ export const en: Record<TKey, string> = {
   "control.changePdf": "Change file",
   "control.addPdf": "Add file",
   "control.uploading": "Uploading…",
+  "control.disconnected": "Connection lost. Reload the page to regain control.",
+  "control.reload": "Reload",
 };
 
 export const dictionaries: Record<Lang, Record<TKey, string>> = { de, en };

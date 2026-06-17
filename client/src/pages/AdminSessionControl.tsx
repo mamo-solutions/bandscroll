@@ -373,6 +373,23 @@ export function AdminSessionControl() {
 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-8 pt-0 sm:px-6">
+      {!connected && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm font-medium text-warning">
+          <span className="flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" />
+            {t("control.disconnected")}
+          </span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-warning px-3 py-1.5 text-xs font-semibold text-warning-foreground transition-colors hover:bg-warning/90"
+          >
+            <RefreshCw className="size-3.5" />
+            {t("control.reload")}
+          </button>
+        </div>
+      )}
+
       {/* PDF preview -- starts right below the sticky header */}
       <Card className="mb-5 overflow-hidden p-0">
         <div className="h-[48vh] sm:h-[58vh]">
