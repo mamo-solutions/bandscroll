@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/errorLog";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-import { effectiveProgress, type SessionState } from "@/types/session";
+import { effectiveProgressFromElapsed, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
   const { code = "" } = useParams();
@@ -26,6 +26,7 @@ export function SessionViewer() {
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
   const displayedRef = useRef<number>(0);
+  const receivedAtRef = useRef<number>(Date.now());
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
 
@@ -47,6 +48,7 @@ export function SessionViewer() {
     const onDisconnect = () => setConnected(false);
     const onState = (s: SessionState) => {
       if (s.code === code) {
+        receivedAtRef.current = Date.now();
         setSession(s);
         setNotFound(false);
         if (s.status === "ended") setEnded(true);
@@ -67,6 +69,7 @@ export function SessionViewer() {
     api
       .sessionByCode(code)
       .then((s) => {
+        receivedAtRef.current = Date.now();
         setSession(s);
         if (s.status === "ended") setEnded(true);
       })
@@ -92,7 +95,8 @@ export function SessionViewer() {
         const s = stateRef.current;
         const viewer = viewerRef.current;
         if (s && viewer) {
-          const target = effectiveProgress(s);
+          const elapsed = Date.now() - receivedAtRef.current;
+          const target = effectiveProgressFromElapsed(s, elapsed);
           const current = displayedRef.current;
           const diff = target - current;
           const next = Math.abs(diff) > 0.04 ? target : current + diff * 0.18;

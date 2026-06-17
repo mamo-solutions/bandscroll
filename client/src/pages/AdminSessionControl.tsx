@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-import { clamp01, effectiveProgress, type SessionState, type SongMarker } from "@/types/session";
+import { clamp01, effectiveProgressFromElapsed, type SessionState, type SongMarker } from "@/types/session";
 
 export function AdminSessionControl() {
   const { id = "" } = useParams();
@@ -42,6 +42,7 @@ export function AdminSessionControl() {
   const playbackRef = useRef<PlaybackControlsHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
+  const receivedAtRef = useRef<number>(Date.now());
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SPEED_STEP = 0.000005;
@@ -57,6 +58,7 @@ export function AdminSessionControl() {
   // ---- Load + socket wiring ----
   useEffect(() => {
     api.adminSession(id).then((s) => {
+      receivedAtRef.current = Date.now();
       setSession(s);
       liveProgressRef.current = s.progress;
     });
@@ -68,7 +70,10 @@ export function AdminSessionControl() {
     };
     const onDisconnect = () => setConnected(false);
     const onState = (s: SessionState) => {
-      if (s.id === id) setSession(s);
+      if (s.id === id) {
+        receivedAtRef.current = Date.now();
+        setSession(s);
+      }
     };
     const onError = (e: { error: string }) =>
       console.warn("admin socket error:", e?.error);
@@ -193,7 +198,8 @@ export function AdminSessionControl() {
       const viewer = viewerRef.current;
       if (s && viewer) {
         if (s.playing) {
-          const target = effectiveProgress(s);
+          const elapsed = Date.now() - receivedAtRef.current;
+          const target = effectiveProgressFromElapsed(s, elapsed);
           liveProgressRef.current = target;
           viewer.scrollToProgress(target);
         } else {
@@ -208,19 +214,20 @@ export function AdminSessionControl() {
   }, []);
 
   // ---- While playing, emit a slim sync ~every 250ms ----
-  // Use effectiveProgress() rather than liveProgressRef so the emitted progress
-  // stays correct when the browser throttles requestAnimationFrame while the
-  // tab is in the background. Clients then receive an up-to-date progress and
-  // can keep extrapolating smoothly.
+  // Use effectiveProgressFromElapsed() with a locally-recorded receive time so
+  // the emitted progress stays correct when the browser throttles
+  // requestAnimationFrame while the tab is in the background, and avoids
+  // backwards scrolling on devices whose clock is behind the server's clock.
   useEffect(() => {
     if (!session?.playing) return;
     const socket = getSocket();
     const interval = setInterval(() => {
       const s = stateRef.current;
       if (!s) return;
+      const elapsed = Date.now() - receivedAtRef.current;
       socket.emit("admin-sync", {
         sessionId: id,
-        progress: effectiveProgress(s),
+        progress: effectiveProgressFromElapsed(s, elapsed),
         playing: true,
       });
     }, 250);
