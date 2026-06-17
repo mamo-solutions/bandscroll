@@ -19,25 +19,25 @@ const IMAGE_RE = /\.(png|jpe?g|webp|gif|avif)$/i;
 
 // PDF pages are rasterized once at this fixed bitmap width and then fit to the
 // container with CSS (.pdf-page-fit). Keeping the render width constant means an
-// orientation change never re-rasterizes the canvases — the previous behavior
-// (width tied to the container) re-rendered all 40+ pages at once on rotate,
-// blocking the main thread for seconds and crashing the tab.
+// orientation change never re-rasterizes the canvases.
 const RENDER_WIDTH = 1000;
-// Cap the device pixel ratio so large documents don't exhaust memory on
-// high-DPI phones (a 40-page PDF at DPR 3 is ~1 GB of canvas).
+// Cap the device pixel ratio so pages don't exhaust memory on high-DPI phones.
 const PAGE_DPR =
   typeof window !== "undefined" ? Math.min(2, window.devicePixelRatio || 1) : 1;
 
+// Virtualization: only pages within the viewport (+/- OVERSCAN) are rendered as
+// canvases; the rest are reserved-height placeholders. This caps canvas memory
+// to a handful of pages — rendering a whole 40+ page PDF at once crashes iOS
+// Safari (a few hundred MB tab limit).
+const OVERSCAN = 2;
+const PAGE_GAP = 12; // matches the flex `gap-3` between page wrappers
+const PAGE_TOP = 12; // matches `pt-3` top padding
+
 export type PdfViewerHandle = {
-  /** Scroll the container to a normalized progress (0..1). */
   scrollToProgress: (progress: number) => void;
-  /** Scroll so the top of the requested page (1-indexed) aligns with the viewport top. */
   scrollToPage: (page: number) => void;
-  /** Normalized progress for the top of the requested page (1-indexed). */
   getProgressForPage: (page: number) => number;
-  /** Read the current normalized scroll progress (0..1). */
   getCurrentProgress: () => number;
-  /** Total pages in the loaded PDF (0 for images or while loading). */
   readonly numPages: number;
 };
 
@@ -59,19 +59,40 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [numPages, setNumPages] = useState(0);
-  // CSS display width of each page/image wrapper (responsive). The PDF bitmap
-  // itself is always rendered at RENDER_WIDTH and scaled to this with CSS.
+  // CSS display width of each page/image wrapper (responsive).
   const [displayWidth, setDisplayWidth] = useState(800);
+  // Page aspect ratio (height / width), measured from the first page. Pages in a
+  // setlist PDF are uniform, so one value reserves space for all of them.
+  const [aspect, setAspect] = useState<number | null>(null);
+  const aspectRef = useRef<number | null>(null);
+  const [range, setRange] = useState({ start: 0, end: 0 });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const rafPending = useRef(false);
+  const readyRef = useRef(false);
   const { t } = useI18n();
 
-  // Reset loading/error state whenever the file changes (initial load or swap).
+  const isImage = IMAGE_RE.test(fileUrl);
+
+  // Reset everything whenever the file changes (initial load or swap).
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setNumPages(0);
+    setAspect(null);
+    aspectRef.current = null;
+    setRange({ start: 0, end: 0 });
+    pageRefs.current = [];
+    readyRef.current = false;
   }, [fileUrl]);
+
+  // Ready = safe to drive programmatic scrolling. Avoids scrolling before the
+  // document has real geometry (which the conductor's loop would otherwise spam).
+  useEffect(() => {
+    readyRef.current = isImage ? !loading : aspect != null;
+  }, [isImage, loading, aspect]);
+
+  const reservedHeight = aspect ? Math.max(1, Math.round(displayWidth * aspect)) : undefined;
 
   const maxScroll = () => {
     const el = scrollRef.current;
@@ -79,11 +100,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return Math.max(1, el.scrollHeight - el.clientHeight);
   };
 
-  const getPageElement = (page: number) => pageRefs.current[page - 1];
-
   const getProgressForPage = (page: number) => {
     const el = scrollRef.current;
-    const pageEl = getPageElement(page);
+    const pageEl = pageRefs.current[page - 1];
     if (!el || !pageEl) return 0;
     return clamp01(pageEl.offsetTop / maxScroll());
   };
@@ -93,14 +112,14 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     () => ({
       scrollToProgress(progress: number) {
         const el = scrollRef.current;
-        if (!el) return;
+        if (!el || !readyRef.current) return;
         el.scrollTop = clamp01(progress) * maxScroll();
       },
       scrollToPage(page: number) {
         const el = scrollRef.current;
-        const pageEl = getPageElement(page);
+        const pageEl = pageRefs.current[page - 1];
         if (!el || !pageEl) return;
-        el.scrollTop = clamp01(pageEl.offsetTop / maxScroll()) * maxScroll();
+        el.scrollTop = pageEl.offsetTop;
       },
       getProgressForPage,
       getCurrentProgress() {
@@ -115,9 +134,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     []
   );
 
-  // Responsive display width from the container. This only drives CSS sizing of
-  // the (already-rasterized) pages, so reacting to it is cheap — no PDF.js
-  // re-render happens on resize/rotate.
+  // Responsive display width — only drives CSS sizing of already-rasterized
+  // pages, so reacting to it is cheap (no PDF.js re-render on resize/rotate).
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -131,37 +149,41 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return () => ro.disconnect();
   }, []);
 
-  // Block user-initiated scrolling on read-only viewers to prevent lag or
-  // de-sync from competing with the conductor's auto-scroll.
+  // Compute which pages should be mounted based on the current scroll position.
+  const updateRange = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || aspect == null || numPages === 0) return;
+    const row = Math.max(1, Math.round(displayWidth * aspect)) + PAGE_GAP;
+    const top = el.scrollTop - PAGE_TOP;
+    const start = Math.max(0, Math.floor(top / row) - OVERSCAN);
+    const end = Math.min(numPages - 1, Math.floor((top + el.clientHeight) / row) + OVERSCAN);
+    setRange((r) => (r.start === start && r.end === end ? r : { start, end }));
+  }, [aspect, numPages, displayWidth]);
+
+  // Recompute the visible window when geometry changes.
+  useEffect(() => {
+    updateRange();
+  }, [updateRange]);
+
+  // Block user-initiated scrolling on read-only viewers so it can't fight the
+  // conductor's auto-scroll.
   useEffect(() => {
     if (!blockUserScroll) return;
     const el = scrollRef.current;
     if (!el) return;
-
     const prevent = (e: Event) => e.preventDefault();
     const preventKey = (e: KeyboardEvent) => {
       if (
-        [
-          "ArrowUp",
-          "ArrowDown",
-          "ArrowLeft",
-          "ArrowRight",
-          "PageUp",
-          "PageDown",
-          "Home",
-          "End",
-          " ",
-          "Spacebar",
-        ].includes(e.key)
+        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", " ", "Spacebar"].includes(
+          e.key
+        )
       ) {
         e.preventDefault();
       }
     };
-
     el.addEventListener("wheel", prevent, { passive: false });
     el.addEventListener("touchmove", prevent, { passive: false });
     window.addEventListener("keydown", preventKey);
-
     return () => {
       el.removeEventListener("wheel", prevent);
       el.removeEventListener("touchmove", prevent);
@@ -170,17 +192,17 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   }, [blockUserScroll]);
 
   const handleScroll = useCallback(() => {
-    if (!onUserScroll || rafPending.current) return;
+    if (rafPending.current) return;
     rafPending.current = true;
     requestAnimationFrame(() => {
       rafPending.current = false;
+      updateRange();
       const el = scrollRef.current;
-      if (el) onUserScroll(clamp01(el.scrollTop / maxScroll()));
+      if (onUserScroll && el) onUserScroll(clamp01(el.scrollTop / maxScroll()));
     });
-  }, [onUserScroll]);
+  }, [onUserScroll, updateRange]);
 
   const centerMsg = "flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground";
-  const isImage = IMAGE_RE.test(fileUrl);
 
   const spinner = (
     <div className={centerMsg}>
@@ -237,22 +259,38 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           error={<div className={centerMsg}>{t("viewer.fileError")}</div>}
         >
           <div className="flex flex-col items-center gap-3 px-2 pb-[55vh] pt-3 sm:px-4">
-            {Array.from({ length: numPages }, (_, i) => (
-              <div
-                key={i}
-                ref={(el) => { pageRefs.current[i] = el; }}
-                className="pdf-page-fit overflow-hidden rounded-lg shadow-[var(--shadow-lift)]"
-                style={{ width: displayWidth }}
-              >
-                <Page
-                  pageNumber={i + 1}
-                  width={RENDER_WIDTH}
-                  devicePixelRatio={PAGE_DPR}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                />
-              </div>
-            ))}
+            {Array.from({ length: numPages }, (_, i) => {
+              const mounted = i >= range.start && i <= range.end;
+              return (
+                <div
+                  key={i}
+                  ref={(el) => { pageRefs.current[i] = el; }}
+                  className="pdf-page-fit overflow-hidden rounded-lg bg-card shadow-[var(--shadow-lift)]"
+                  style={{ width: displayWidth, height: reservedHeight }}
+                >
+                  {mounted && (
+                    <Page
+                      pageNumber={i + 1}
+                      width={RENDER_WIDTH}
+                      devicePixelRatio={PAGE_DPR}
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
+                      loading={null as unknown as undefined}
+                      onLoadSuccess={(page) => {
+                        if (aspectRef.current == null) {
+                          const w = page.originalWidth || page.width;
+                          const h = page.originalHeight || page.height;
+                          if (w > 0 && h > 0) {
+                            aspectRef.current = h / w;
+                            setAspect(h / w);
+                          }
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Document>
       )}
