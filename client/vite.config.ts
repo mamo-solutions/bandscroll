@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { APP_VERSION } from "./src/version";
 
 // Dev: proxy API, uploads and socket.io to the backend on :3000 so the browser
 // sees a single origin (cookies + websockets work without CORS headaches).
@@ -29,6 +30,7 @@ export default defineConfig({
         name: "BandScroll",
         short_name: "BandScroll",
         description: "Realtime synchronized PDF scrolling for live sessions",
+        version: APP_VERSION,
         theme_color: "#fdf8f3",
         background_color: "#fdf8f3",
         display: "standalone",

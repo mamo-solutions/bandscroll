@@ -12,6 +12,7 @@ function GithubMark() {
 }
 import { useI18n } from "@/i18n/I18nProvider";
 import { LANGUAGES } from "@/i18n/translations";
+import { APP_VERSION } from "@/version";
 
 export function Footer() {
   const { t, lang, setLang } = useI18n();
@@ -38,6 +39,9 @@ export function Footer() {
             mamo.solutions
           </a>
           {after}
+          <span className="ml-2 font-mono text-xs text-muted-foreground">
+            {APP_VERSION}
+          </span>
         </p>
 
         <div className="flex items-center gap-1">

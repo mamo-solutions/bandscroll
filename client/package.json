@@ -5,9 +5,13 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
+    "version": "node scripts/version.js",
+    "predev": "npm run version",
     "dev": "vite",
+    "prebuild": "npm run version",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "pretest": "npm run version",
     "test": "vitest run",
     "test:watch": "vitest"
   },

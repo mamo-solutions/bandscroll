@@ -8,3 +8,4 @@ caddy_config/
 *.log
 .DS_Store
 .opencode/skills
+client/src/version.ts
