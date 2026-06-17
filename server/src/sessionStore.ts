@@ -46,6 +46,7 @@ export function createSession(input: CreateSessionInput): SessionState {
     connectedClients: 0,
     createdAt: now,
     markers: [],
+    locked: false,
   };
   adapter.set(session.id, session);
   return session;
@@ -85,6 +86,7 @@ export type SessionPatch = Partial<
     | "progress"
     | "speed"
     | "markers"
+    | "locked"
   >
 >;
 
@@ -113,7 +115,15 @@ export function endSession(id: string): SessionState | undefined {
   return adapter.set(session.id, session);
 }
 
+export function toggleSessionLock(id: string): SessionState | undefined {
+  const session = adapter.get(id);
+  if (!session) return undefined;
+  return updateSessionState(id, { locked: !session.locked });
+}
+
 export function deleteSession(id: string): boolean {
+  const session = adapter.get(id);
+  if (session?.locked) return false;
   return adapter.delete(id);
 }
 

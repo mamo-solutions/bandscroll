@@ -83,6 +83,10 @@ export const de = {
   "dash.copied": "Kopiert",
   "dash.end": "Beenden",
   "dash.deleteAria": "Session löschen",
+  "dash.lock": "Session sperren",
+  "dash.lockAria": "Session vor Löschen schützen",
+  "dash.unlock": "Session entsperren",
+  "dash.unlockAria": "Löschschutz aufheben",
   "dash.deleteConfirm":
     "Session wirklich löschen? Das kann nicht rückgängig gemacht werden.",
 
@@ -208,6 +212,10 @@ export const en: Record<TKey, string> = {
   "dash.copied": "Copied",
   "dash.end": "End",
   "dash.deleteAria": "Delete session",
+  "dash.lock": "Lock session",
+  "dash.lockAria": "Protect session from deletion",
+  "dash.unlock": "Unlock session",
+  "dash.unlockAria": "Remove deletion protection",
   "dash.deleteConfirm": "Really delete this session? This cannot be undone.",
 
   "controls.progress": "Progress",

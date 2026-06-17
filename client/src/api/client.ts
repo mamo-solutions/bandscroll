@@ -72,4 +72,8 @@ export const api = {
     request<SessionState>(`/api/admin/sessions/${id}/end`, { method: "POST" }),
   deleteSession: (id: string) =>
     request<{ ok: boolean }>(`/api/admin/sessions/${id}`, { method: "DELETE" }),
+  toggleSessionLock: (id: string) =>
+    request<SessionState>(`/api/admin/sessions/${id}/toggle-lock`, {
+      method: "POST",
+    }),
 };

@@ -20,6 +20,7 @@ export type SessionState = {
   connectedClients: number;
   createdAt: number;
   markers: SongMarker[];
+  locked: boolean;
 };
 
 /** Slim payload broadcast to clients for the live scroll sync. */

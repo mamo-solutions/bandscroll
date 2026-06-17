@@ -12,6 +12,7 @@ import {
   endSession,
   getSessionById,
   listAdminSessions,
+  toggleSessionLock,
   updateSessionState,
   clampProgress,
 } from "../sessionStore.js";
@@ -234,8 +235,23 @@ adminRouter.post("/sessions/:id/end", (req, res) => {
   res.json(ended);
 });
 
+adminRouter.post("/sessions/:id/toggle-lock", (req, res) => {
+  const updated = toggleSessionLock(req.params.id);
+  if (!updated) {
+    res.status(404).json({ error: "session-not-found" });
+    return;
+  }
+  broadcastSessionState(updated);
+  broadcastSessionListUpdated();
+  res.json(updated);
+});
+
 adminRouter.delete("/sessions/:id", (req, res) => {
   const session = getSessionById(req.params.id);
+  if (session?.locked) {
+    res.status(409).json({ error: "session-locked" });
+    return;
+  }
   if (session) {
     broadcastSessionEnded(session);
   }

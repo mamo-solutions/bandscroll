@@ -7,9 +7,11 @@ import {
   FileUp,
   Link2,
   Loader2,
+  Lock,
   Plus,
   Settings2,
   Trash2,
+  Unlock,
 } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { AdminNav } from "@/components/AdminNav";
@@ -23,6 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import type { SessionState } from "@/types/session";
@@ -91,8 +94,14 @@ export function AdminDashboard() {
     load();
   }
 
-  async function deleteSession(id: string) {
+  async function deleteSession(id: string, locked: boolean) {
+    if (locked) return;
     if (confirm(t("dash.deleteConfirm"))) await api.deleteSession(id).then(load);
+  }
+
+  async function toggleLock(id: string) {
+    await api.toggleSessionLock(id);
+    load();
   }
 
   return (
@@ -239,8 +248,23 @@ export function AdminDashboard() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => deleteSession(s.id)}
+                  onClick={() => toggleLock(s.id)}
+                  aria-label={s.locked ? t("dash.unlockAria") : t("dash.lockAria")}
+                  title={s.locked ? t("dash.unlock") : t("dash.lock")}
+                >
+                  {s.locked ? <Lock className="size-4" /> : <Unlock className="size-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "ml-auto",
+                    s.locked
+                      ? "text-muted-foreground"
+                      : "text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  )}
+                  onClick={() => deleteSession(s.id, s.locked)}
+                  disabled={s.locked}
                   aria-label={t("dash.deleteAria")}
                 >
                   <Trash2 />

@@ -20,6 +20,7 @@ export type SessionState = {
   connectedClients: number;
   createdAt: number;
   markers: SongMarker[];
+  locked: boolean;
 };
 
 /** Compute live progress from the last server snapshot.
