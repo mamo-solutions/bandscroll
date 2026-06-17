@@ -19,7 +19,7 @@ import { api } from "@/api/client";
 import { getSocket } from "@/sockets/socket";
 import { auth } from "@/api/auth";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
-import { PlaybackControls } from "@/components/PlaybackControls";
+import { PlaybackControls, type PlaybackControlsHandle } from "@/components/PlaybackControls";
 import { useHeaderSlot } from "@/components/HeaderSlot";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -39,11 +39,11 @@ export function AdminSessionControl() {
   const [numPages, setNumPages] = useState(0);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
+  const playbackRef = useRef<PlaybackControlsHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
   const pdfInput = useRef<HTMLInputElement>(null);
 
-  const KB_SEEK_STEP = 0.02;
   const KB_SPEED_STEP = 0.000005;
   const KB_SPEED_MIN = 0.00001;
   const KB_SPEED_MAX = 0.002;
@@ -230,16 +230,13 @@ export function AdminSessionControl() {
 
       switch (e.key) {
         case " ":
+        case "ArrowRight":
           e.preventDefault();
           session.playing ? pause() : play();
           break;
         case "ArrowLeft":
           e.preventDefault();
-          seek(clamp01(liveProgressRef.current - KB_SEEK_STEP));
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          seek(clamp01(liveProgressRef.current + KB_SEEK_STEP));
+          playbackRef.current?.tap();
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -389,6 +386,7 @@ export function AdminSessionControl() {
       {/* Controls */}
       <Card className="p-5 sm:p-6">
         <PlaybackControls
+          ref={playbackRef}
           session={session}
           connectedClients={session.connectedClients}
           liveProgress={uiProgress}

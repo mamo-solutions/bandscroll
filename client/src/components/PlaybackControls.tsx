@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   Crosshair,
   Gauge,
@@ -54,22 +54,30 @@ type Props = {
   onSeekToMarker: (page: number) => void;
 };
 
-export function PlaybackControls({
-  session,
-  connectedClients,
-  liveProgress,
-  numPages,
-  onPlay,
-  onPause,
-  onStop,
-  onRestart,
-  onSetSpeed,
-  onSeek,
-  onSeekToCurrent,
-  onAddMarker,
-  onDeleteMarker,
-  onSeekToMarker,
-}: Props) {
+export type PlaybackControlsHandle = {
+  /** Trigger the tap-tempo button (visual pulse + auto-apply on enough taps). */
+  tap: () => void;
+};
+
+export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(function PlaybackControls(
+  {
+    session,
+    connectedClients,
+    liveProgress,
+    numPages,
+    onPlay,
+    onPause,
+    onStop,
+    onRestart,
+    onSetSpeed,
+    onSeek,
+    onSeekToCurrent,
+    onAddMarker,
+    onDeleteMarker,
+    onSeekToMarker,
+  }: Props,
+  ref
+) {
   const { t } = useI18n();
   const [pagesPerSong, setPagesPerSong] = useState<string>("2");
   const [markerTitle, setMarkerTitle] = useState("");
@@ -89,6 +97,8 @@ export function PlaybackControls({
   // Tap tempo state is kept in refs so rapid taps don't thrash React.
   const tapsRef = useRef<number[]>([]);
   const lastAppliedRef = useRef<number>(0);
+
+  useImperativeHandle(ref, () => ({ tap: handleTap }), []);
 
   // Continuous pulse on the tap button at the accepted BPM.
   useEffect(() => {
@@ -475,7 +485,7 @@ export function PlaybackControls({
       </div>
     </div>
   );
-}
+});
 
 function Stat({
   icon,
