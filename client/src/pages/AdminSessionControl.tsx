@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   CircleDot,
@@ -27,7 +27,7 @@ import { Card } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
-import { clamp01, effectiveProgressFromElapsed, type SessionState, type SongMarker } from "@/types/session";
+import { clamp01, type SessionState, type SongMarker } from "@/types/session";
 
 export function AdminSessionControl() {
   const { id = "" } = useParams();
@@ -43,7 +43,25 @@ export function AdminSessionControl() {
   const playbackRef = useRef<PlaybackControlsHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
-  const receivedAtRef = useRef<number>(Date.now());
+  // Wall-clock timestamp of the last integration step. The conductor's scroll
+  // position is integrated locally from this (monotonic, never reset by the
+  // server echo), which avoids the sawtooth from re-deriving position from our
+  // own round-tripped admin-sync. Wall-clock (not rAF frames) keeps playback
+  // advancing while the tab is backgrounded.
+  const lastWallRef = useRef<number>(Date.now());
+
+  // Advance the local playback position by the real elapsed time. Idempotent
+  // w.r.t. call frequency, so the rAF loop (smooth scroll) and the 250 ms sync
+  // emitter can both call it.
+  const advance = useCallback(() => {
+    const now = Date.now();
+    const s = stateRef.current;
+    if (s?.playing) {
+      const dt = Math.max(0, (now - lastWallRef.current) / 1000);
+      liveProgressRef.current = clamp01(liveProgressRef.current + s.speed * dt);
+    }
+    lastWallRef.current = now;
+  }, []);
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SPEED_STEP = 0.000005;
@@ -60,7 +78,7 @@ export function AdminSessionControl() {
   // ---- Load + socket wiring ----
   useEffect(() => {
     api.adminSession(id).then((s) => {
-      receivedAtRef.current = Date.now();
+      lastWallRef.current = Date.now();
       setSession(s);
       liveProgressRef.current = s.progress;
     });
@@ -72,10 +90,10 @@ export function AdminSessionControl() {
     };
     const onDisconnect = () => setConnected(false);
     const onState = (s: SessionState) => {
-      if (s.id === id) {
-        receivedAtRef.current = Date.now();
-        setSession(s);
-      }
+      // Refresh UI state (speed, playing, markers, …) only. The scroll position
+      // is integrated locally and must NOT be reset from the echo of our own
+      // admin-sync, or it sawtooths back ~RTT*speed every cycle.
+      if (s.id === id) setSession(s);
     };
     const onError = (e: { error: string }) =>
       console.warn("admin socket error:", e?.error);
@@ -200,12 +218,13 @@ export function AdminSessionControl() {
       const viewer = viewerRef.current;
       if (s && viewer) {
         if (s.playing) {
-          const elapsed = Date.now() - receivedAtRef.current;
-          const target = effectiveProgressFromElapsed(s, elapsed);
-          liveProgressRef.current = target;
-          viewer.scrollToProgress(target);
+          advance();
+          viewer.scrollToProgress(liveProgressRef.current);
         } else {
+          // Paused: track manual scrolling and keep the clock fresh so the next
+          // play() doesn't integrate a huge gap.
           liveProgressRef.current = viewer.getCurrentProgress();
+          lastWallRef.current = Date.now();
         }
       }
       if (frame++ % 10 === 0) setUiProgress(liveProgressRef.current);
@@ -213,28 +232,28 @@ export function AdminSessionControl() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [advance]);
 
   // ---- While playing, emit a slim sync ~every 250ms ----
-  // Use effectiveProgressFromElapsed() with a locally-recorded receive time so
-  // the emitted progress stays correct when the browser throttles
-  // requestAnimationFrame while the tab is in the background, and avoids
-  // backwards scrolling on devices whose clock is behind the server's clock.
+  // Emits the locally-integrated position (advance() uses wall-clock elapsed),
+  // so it stays correct even when rAF is throttled in a backgrounded tab.
   useEffect(() => {
     if (!session?.playing) return;
     const socket = getSocket();
     const interval = setInterval(() => {
       const s = stateRef.current;
       if (!s) return;
-      const elapsed = Date.now() - receivedAtRef.current;
+      // Wall-clock advance keeps the emitted position correct even when rAF is
+      // throttled (tab backgrounded).
+      advance();
       socket.emit("admin-sync", {
         sessionId: id,
-        progress: effectiveProgressFromElapsed(s, elapsed),
+        progress: liveProgressRef.current,
         playing: true,
       });
     }, 250);
     return () => clearInterval(interval);
-  }, [session?.playing, id]);
+  }, [session?.playing, id, advance]);
 
   // ---- Keyboard shortcuts for live conducting ----
   useEffect(() => {
