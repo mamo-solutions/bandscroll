@@ -208,13 +208,19 @@ export function AdminSessionControl() {
   }, []);
 
   // ---- While playing, emit a slim sync ~every 250ms ----
+  // Use effectiveProgress() rather than liveProgressRef so the emitted progress
+  // stays correct when the browser throttles requestAnimationFrame while the
+  // tab is in the background. Clients then receive an up-to-date progress and
+  // can keep extrapolating smoothly.
   useEffect(() => {
     if (!session?.playing) return;
     const socket = getSocket();
     const interval = setInterval(() => {
+      const s = stateRef.current;
+      if (!s) return;
       socket.emit("admin-sync", {
         sessionId: id,
-        progress: liveProgressRef.current,
+        progress: effectiveProgress(s),
         playing: true,
       });
     }, 250);
