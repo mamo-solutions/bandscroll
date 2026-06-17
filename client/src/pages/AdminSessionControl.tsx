@@ -136,7 +136,11 @@ export function AdminSessionControl() {
   }, [id]);
 
   // ---- Project session header into the shared layout header bar ----
-  const { setNode } = useHeaderSlot();
+  const { setNode, setHidden } = useHeaderSlot();
+  useEffect(() => {
+    setHidden(distractionFree);
+  }, [distractionFree, setHidden]);
+
   useEffect(() => {
     if (!session || distractionFree) {
       setNode(null);
@@ -449,7 +453,7 @@ export function AdminSessionControl() {
         <Card
           className={cn(
             "relative overflow-hidden p-0",
-            distractionFree ? "mb-0 h-[calc(100dvh-4rem)]" : "mb-5",
+            distractionFree ? "mb-0 h-dvh" : "mb-5",
             isLandscapeMobile && !distractionFree ? "flex-1" : "w-full"
           )}
         >
