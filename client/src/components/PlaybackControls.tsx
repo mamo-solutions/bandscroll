@@ -98,7 +98,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
   const tapsRef = useRef<number[]>([]);
   const lastAppliedRef = useRef<number>(0);
 
-  useImperativeHandle(ref, () => ({ tap: handleTap }), []);
+  useImperativeHandle(ref, () => ({ tap: handleTap }), [handleTap]);
 
   // Continuous pulse on the tap button at the accepted BPM.
   useEffect(() => {
