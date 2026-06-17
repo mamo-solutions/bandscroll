@@ -181,8 +181,8 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Control bar: info cards + transport in one row at every resolution. */}
-      <div className="flex flex-nowrap items-stretch gap-2.5">
+      {/* Control bar: info cards + transport in one row on desktop, two rows on small mobile. */}
+      <div className="flex flex-wrap items-stretch gap-2.5 md:flex-nowrap">
         <Stat
           icon={<Gauge className="size-4" />}
           label={t("controls.tempo")}
