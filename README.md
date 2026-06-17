@@ -17,15 +17,23 @@ time with the host.
 ## Features
 
 - 🎼 **Host-controlled auto-scroll** — play, pause, stop, seek, speed, restart.
+- 🎚️ **Tap tempo** — tap in the beat and BandScroll derives the scroll speed
+  from pages per song and beats per song.
+- 🎸 **Song markers / setlist** — save titled markers per page and jump to them
+  instantly during the session.
+- 🦶 **Foot-switch friendly keyboard shortcuts** — arrow keys control speed
+  (`↑`/`↓`), tap tempo (`←`) and play/pause (`→`/`Space`).
 - 🔄 **Real-time sync** over Socket.IO; viewers are strictly read-only.
 - 🎵 **Swap songs live** — change the PDF mid-session without dropping viewers.
 - 👀 **Open session list + join-by-code** (e.g. `SESSION-7421`) on the home page.
 - 🔐 **Password-protected host area**; the password lives only in the backend
   `.env` and never reaches the browser bundle.
 - 🧮 **Drift-free playback** — viewers extrapolate position locally and gently
-  correct toward the host's authoritative state.
+  correct toward the host's authoritative state; playback keeps moving even when
+  the host tab is in the background.
 - 🌍 **English & German UI**, auto-detected from the browser with a manual toggle.
-- 📱 **Installable PWA** with a modern, responsive, warm-pastel interface.
+- 📱 **Installable PWA** with a modern, responsive, warm-pastel interface; the
+  admin control view is optimized for tablets in portrait mode.
 - 🐳 **Docker-ready**, or run it behind your existing nginx / Caddy.
 
 ## How it works
@@ -114,10 +122,13 @@ for PDF uploads. Set `NODE_ENV=production` so the session cookie is marked
 bandscroll/
 ├── client/          # React + Vite PWA
 │   └── src/{api,sockets,types,components,pages,i18n}
+│       └── components/ui/   # shadcn-style Tailwind primitives
 ├── server/          # Express + Socket.IO
 │   └── src/{app,index,env,types,sessionStore,auth}.ts
 │       ├── routes/{publicRoutes,adminRoutes}.ts
-│       └── sockets/socketServer.ts
+│       ├── sockets/socketServer.ts
+│       ├── store/{memorySessionStore,fileSessionStore}.ts
+│       └── uploads/{cleanup,validate}.ts
 ├── uploads/         # uploaded PDFs
 ├── Dockerfile · docker-compose.yml · Caddyfile
 └── .env.example
@@ -129,7 +140,7 @@ Sessions default to in-memory storage; set `STORAGE=file` in `.env` to persist
 them across restarts. Uploads are garbage-collected when a session is deleted or
 its PDF is replaced, provided no other session references the same file. There is
 a single shared host password (no per-user accounts). Possible next steps: a
-SQLite/Postgres adapter, a Redis adapter for horizontal scaling, multi-PDF setlists,
+SQLite/Postgres adapter, a Redis adapter for horizontal scaling, multi-file setlists,
 and per-user roles.
 
 ## Contributing
