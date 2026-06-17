@@ -9,7 +9,6 @@ import {
   Plus,
   SkipBack,
   Square,
-  Timer,
   Trash2,
   Users,
 } from "lucide-react";
@@ -172,26 +171,73 @@ export function PlaybackControls({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat icon={<Timer className="size-4" />} label={t("controls.progress")}>
-          {(liveProgress * 100).toFixed(1)}%
-        </Stat>
-        <Stat icon={<Gauge className="size-4" />} label={t("controls.tempo")}>
+      {/* Control bar: info cards + transport in one row, optimized for tablet portrait. */}
+      <div className="flex flex-wrap items-stretch gap-2.5">
+        <Stat
+          icon={<Gauge className="size-4" />}
+          label={t("controls.tempo")}
+          className="min-w-[6.5rem] flex-1"
+        >
           {session.speed.toFixed(6)}
         </Stat>
         <Stat
-          icon={
-            session.playing ? <Play className="size-4" /> : <Pause className="size-4" />
-          }
-          label={t("controls.status")}
-          tone={session.playing ? "success" : "warning"}
+          icon={<Users className="size-4" />}
+          label={t("controls.viewers")}
+          className="min-w-[6.5rem] flex-1"
         >
-          {session.playing ? t("conn.playing") : t("controls.pause")}
-        </Stat>
-        <Stat icon={<Users className="size-4" />} label={t("controls.viewers")}>
           {connectedClients}
         </Stat>
+
+        <div className="flex min-w-[16rem] flex-1 gap-2.5">
+          {session.playing ? (
+            <Button
+              variant="warning"
+              onClick={onPause}
+              className="h-full flex-1"
+              title={t("controls.pause")}
+            >
+              <Pause />
+              <span className="hidden lg:inline">{t("controls.pause")}</span>
+            </Button>
+          ) : (
+            <Button
+              variant="success"
+              onClick={onPlay}
+              className="h-full flex-1"
+              title={t("controls.play")}
+            >
+              <Play />
+              <span className="hidden lg:inline">{t("controls.play")}</span>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={onStop}
+            className="h-full flex-1"
+            title={t("controls.stop")}
+          >
+            <Square />
+            <span className="hidden lg:inline">{t("controls.stop")}</span>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onRestart}
+            className="h-full flex-1"
+            title={t("controls.startOver")}
+          >
+            <SkipBack />
+            <span className="hidden lg:inline">{t("controls.startOver")}</span>
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={onSeekToCurrent}
+            className="h-full flex-1"
+            title={t("controls.here")}
+          >
+            <Crosshair />
+            <span className="hidden lg:inline">{t("controls.here")}</span>
+          </Button>
+        </div>
       </div>
 
       {/* Seek */}
@@ -208,33 +254,6 @@ export function PlaybackControls({
           onValueChange={([v]) => onSeek(v / 1000)}
           aria-label={t("controls.positionAria")}
         />
-      </div>
-
-      {/* Transport */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        {session.playing ? (
-          <Button variant="warning" size="lg" onClick={onPause}>
-            <Pause />
-            {t("controls.pause")}
-          </Button>
-        ) : (
-          <Button variant="success" size="lg" onClick={onPlay}>
-            <Play />
-            {t("controls.play")}
-          </Button>
-        )}
-        <Button variant="outline" size="lg" onClick={onStop}>
-          <Square />
-          {t("controls.stop")}
-        </Button>
-        <Button variant="outline" size="lg" onClick={onRestart}>
-          <SkipBack />
-          {t("controls.startOver")}
-        </Button>
-        <Button variant="secondary" size="lg" onClick={onSeekToCurrent}>
-          <Crosshair />
-          {t("controls.here")}
-        </Button>
       </div>
 
       {/* Speed + tap tempo */}
@@ -463,14 +482,16 @@ function Stat({
   label,
   children,
   tone,
+  className,
 }: {
   icon: React.ReactNode;
   label: string;
   children: React.ReactNode;
   tone?: "success" | "warning";
+  className?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2.5">
+    <div className={cn("rounded-lg border border-border bg-card px-3 py-2.5", className)}>
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         {icon}
         {label}
