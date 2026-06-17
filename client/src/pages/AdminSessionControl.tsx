@@ -8,6 +8,9 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Maximize,
+  Minimize,
+  Music,
   Pause,
   Play,
   Radio,
@@ -38,6 +41,8 @@ export function AdminSessionControl() {
   const [uiProgress, setUiProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [numPages, setNumPages] = useState(0);
+  const [distractionFree, setDistractionFree] = useState(false);
+  const [isLandscapeMobile, setIsLandscapeMobile] = useState(false);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const playbackRef = useRef<PlaybackControlsHandle>(null);
@@ -74,6 +79,24 @@ export function AdminSessionControl() {
   useEffect(() => {
     stateRef.current = session;
   }, [session]);
+
+  // ---- Detect phone/tablet landscape mode for the marker sidebar ----
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: landscape) and (max-width: 1024px)");
+    const update = () => setIsLandscapeMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // ---- Sync distraction-free state with browser fullscreen ----
+  useEffect(() => {
+    const handler = () => {
+      setDistractionFree(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   // ---- Load + socket wiring ----
   useEffect(() => {
@@ -115,7 +138,7 @@ export function AdminSessionControl() {
   // ---- Project session header into the shared layout header bar ----
   const { setNode } = useHeaderSlot();
   useEffect(() => {
-    if (!session) {
+    if (!session || distractionFree) {
       setNode(null);
       return;
     }
@@ -207,7 +230,7 @@ export function AdminSessionControl() {
       </div>
     );
     return () => setNode(null);
-  }, [session, connected, uploading, setNode, t, navigate, pdfInput]);
+  }, [session, connected, uploading, distractionFree, setNode, t, navigate, pdfInput]);
 
   // ---- Auto-scroll loop: when playing, follow the computed progress ----
   useEffect(() => {
@@ -393,8 +416,13 @@ export function AdminSessionControl() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-8 pt-0 sm:px-6">
-      {!connected && (
+    <main
+      className={cn(
+        "mx-auto w-full flex-1 px-4 pt-0 sm:px-6",
+        distractionFree ? "max-w-none pb-0" : "max-w-5xl pb-8"
+      )}
+    >
+      {!distractionFree && !connected && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm font-medium text-warning">
           <span className="flex items-center gap-2">
             <Loader2 className="size-4 animate-spin" />
@@ -411,49 +439,148 @@ export function AdminSessionControl() {
         </div>
       )}
 
-      {/* PDF preview -- starts right below the sticky header */}
-      <Card className="mb-5 overflow-hidden p-0">
-        <div className="h-[48vh] sm:h-[58vh]">
-          {session.pdfUrl ? (
-            <PdfViewer
-              key={session.pdfUrl}
-              ref={viewerRef}
-              fileUrl={session.pdfUrl}
-              onUserScroll={(p) => {
-                if (!stateRef.current?.playing) liveProgressRef.current = p;
-              }}
-              onDocumentLoad={setNumPages}
-            />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
-              <FileWarning className="size-7" />
-              <p className="font-medium">{t("control.noPdfTitle")}</p>
-              <p className="text-sm">{t("control.noPdfDesc")}</p>
+      <div
+        className={cn(
+          "flex gap-4",
+          isLandscapeMobile && !distractionFree ? "flex-row" : "flex-col"
+        )}
+      >
+        {/* PDF preview -- starts right below the sticky header */}
+        <Card
+          className={cn(
+            "relative overflow-hidden p-0",
+            distractionFree ? "mb-0 h-[calc(100dvh-4rem)]" : "mb-5",
+            isLandscapeMobile && !distractionFree ? "flex-1" : "w-full"
+          )}
+        >
+          <div className={cn(!distractionFree && "h-[48vh] sm:h-[58vh]", distractionFree && "h-full")}>
+            {session.pdfUrl ? (
+              <PdfViewer
+                key={session.pdfUrl}
+                ref={viewerRef}
+                fileUrl={session.pdfUrl}
+                onUserScroll={(p) => {
+                  if (!stateRef.current?.playing) liveProgressRef.current = p;
+                }}
+                onDocumentLoad={setNumPages}
+              />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+                <FileWarning className="size-7" />
+                <p className="font-medium">{t("control.noPdfTitle")}</p>
+                <p className="text-sm">{t("control.noPdfDesc")}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Floating setlist overlay in distraction-free mode */}
+          {distractionFree && (session.markers ?? []).length > 0 && (
+            <div className="absolute right-3 top-3 z-10 max-h-[calc(100%-6rem)] w-44 overflow-y-auto rounded-xl border border-border/60 bg-background/85 p-2 shadow-[var(--shadow-lift)] backdrop-blur-md">
+              <div className="mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("controls.setlist")}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {(session.markers ?? []).map((marker) => (
+                  <button
+                    key={marker.id}
+                    type="button"
+                    onClick={() => seekToMarker(marker.page)}
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
+                  >
+                    <Music className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{marker.title}</span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {marker.page}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
-        </div>
-      </Card>
+        </Card>
+
+        {/* Marker sidebar for phone/tablet landscape */}
+        {isLandscapeMobile && !distractionFree && (
+          <Card className="w-44 shrink-0 overflow-hidden p-0">
+            <div className="flex h-[48vh] flex-col sm:h-[58vh]">
+              <div className="border-b border-border bg-muted/50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("controls.setlist")}
+              </div>
+              <div className="flex-1 overflow-y-auto p-2">
+                {(session.markers ?? []).length === 0 ? (
+                  <p className="p-2 text-xs text-muted-foreground">
+                    {t("control.noMarkers")}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {(session.markers ?? []).map((marker) => (
+                      <button
+                        key={marker.id}
+                        type="button"
+                        onClick={() => seekToMarker(marker.page)}
+                        className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
+                      >
+                        <Music className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{marker.title}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {marker.page}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
 
       {/* Controls */}
-      <Card className="p-5 sm:p-6">
-        <PlaybackControls
-          ref={playbackRef}
-          session={session}
-          connectedClients={session.connectedClients}
-          liveProgress={uiProgress}
-          numPages={numPages}
-          onPlay={play}
-          onPause={pause}
-          onStop={stop}
-          onRestart={restart}
-          onSetSpeed={setSpeed}
-          onSeek={seek}
-          onSeekToCurrent={seekToCurrent}
-          onAddMarker={addMarker}
-          onDeleteMarker={deleteMarker}
-          onSeekToMarker={seekToMarker}
-        />
-      </Card>
+      {!distractionFree && (
+        <Card className="p-5 sm:p-6">
+          <PlaybackControls
+            ref={playbackRef}
+            session={session}
+            connectedClients={session.connectedClients}
+            liveProgress={uiProgress}
+            numPages={numPages}
+            onPlay={play}
+            onPause={pause}
+            onStop={stop}
+            onRestart={restart}
+            onSetSpeed={setSpeed}
+            onSeek={seek}
+            onSeekToCurrent={seekToCurrent}
+            onAddMarker={addMarker}
+            onDeleteMarker={deleteMarker}
+            onSeekToMarker={seekToMarker}
+          />
+        </Card>
+      )}
+
+      {/* Distraction-free toggle (also triggers browser fullscreen) */}
+      <button
+        type="button"
+        onClick={async () => {
+          const next = !distractionFree;
+          setDistractionFree(next);
+          if (!document.fullscreenEnabled) return;
+          try {
+            if (next && !document.fullscreenElement) {
+              await document.documentElement.requestFullscreen();
+            } else if (!next && document.fullscreenElement) {
+              await document.exitFullscreen();
+            }
+          } catch {
+            // Fullscreen request may be denied; keep the UI state change.
+          }
+        }}
+        className="fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-[var(--shadow-lift)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        title={distractionFree ? t("control.showUi") : t("control.hideUi")}
+        aria-label={distractionFree ? t("control.showUi") : t("control.hideUi")}
+      >
+        {distractionFree ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
+      </button>
     </main>
   );
 }

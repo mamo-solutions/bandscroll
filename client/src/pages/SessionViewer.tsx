@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, AudioLines, FileX2, Loader2, OctagonX } from "lucide-react";
+import {
+  ArrowLeft,
+  AudioLines,
+  FileX2,
+  Loader2,
+  Maximize,
+  Minimize,
+  OctagonX,
+} from "lucide-react";
 import { api } from "@/api/client";
 import { getSocket } from "@/sockets/socket";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
@@ -23,6 +31,7 @@ export function SessionViewer() {
   const [ended, setEnded] = useState(false);
   const [uiProgress, setUiProgress] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
+  const [distractionFree, setDistractionFree] = useState(false);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
@@ -35,6 +44,15 @@ export function SessionViewer() {
   useEffect(() => {
     stateRef.current = session;
   }, [session]);
+
+  // ---- Sync distraction-free state with browser fullscreen ----
+  useEffect(() => {
+    const handler = () => {
+      setDistractionFree(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   // ---- Socket wiring ----
   useEffect(() => {
@@ -170,40 +188,43 @@ export function SessionViewer() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-muted/40">
       {/* Single merged bar: brand/home + title + status + progress. Auto-hides
-          while playing. */}
-      <header
-        className={cn(
-          "absolute inset-x-0 top-0 z-20 border-b border-border/60 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-transform duration-300 ease-out",
-          chromeHidden && "-translate-y-full"
-        )}
-      >
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-3 sm:px-6">
-          <Link
-            to="/"
-            aria-label={t("viewer.backAria")}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)] transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <AudioLines className="size-5" />
-          </Link>
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-heading text-sm font-semibold leading-tight sm:text-base">
-              {session?.title ?? t("viewer.loading")}
-            </p>
-            <span className="font-mono text-xs text-muted-foreground">{code}</span>
+          while playing. Hidden in distraction-free mode. */}
+      {!distractionFree && (
+        <header
+          className={cn(
+            "absolute inset-x-0 top-0 z-20 border-b border-border/60 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-transform duration-300 ease-out",
+            chromeHidden && "-translate-y-full"
+          )}
+        >
+          <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-3 sm:px-6">
+            <Link
+              to="/"
+              aria-label={t("viewer.backAria")}
+              className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)] transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <AudioLines className="size-5" />
+            </Link>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-heading text-sm font-semibold leading-tight sm:text-base">
+                {session?.title ?? t("viewer.loading")}
+              </p>
+              <span className="font-mono text-xs text-muted-foreground">{code}</span>
+            </div>
+            <ConnectionStatus connected={connected} playing={session?.playing} />
           </div>
-          <ConnectionStatus connected={connected} playing={session?.playing} />
-        </div>
 
-        <div className="h-1 w-full bg-muted">
-          <div
-            className="h-full bg-primary transition-[width] duration-200 ease-linear"
-            style={{ width: `${Math.round(uiProgress * 100)}%` }}
-          />
-        </div>
-      </header>
+          <div className="h-1 w-full bg-muted">
+            <div
+              className="h-full bg-primary transition-[width] duration-200 ease-linear"
+              style={{ width: `${Math.round(uiProgress * 100)}%` }}
+            />
+          </div>
+        </header>
+      )}
 
-      {/* Status banners (kept visible — they only appear on problems). */}
-      {(ended || !connected) && (
+      {/* Status banners (kept visible — they only appear on problems). Hidden in
+          distraction-free mode. */}
+      {!distractionFree && (ended || !connected) && (
         <div className="absolute inset-x-0 top-[calc(3.75rem+env(safe-area-inset-top))] z-30 mx-auto w-full max-w-6xl px-3 sm:px-6">
           {ended && (
             <Banner tone="muted" icon={<OctagonX className="size-4" />}>
@@ -218,8 +239,7 @@ export function SessionViewer() {
         </div>
       )}
 
-      {/* Document area: sits between the header and footer so the footer is not
-          sticky/overlaying the score. */}
+      {/* Document area */}
       <div className="relative flex-1 overflow-hidden">
         {pdfUrl ? (
           <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} blockUserScroll />
@@ -230,13 +250,36 @@ export function SessionViewer() {
         )}
       </div>
 
-      {/* Footer sits at the bottom of the page and is removed from layout while
-          playing so the PDF can use the full viewport height. */}
-      {!chromeHidden && (
+      {/* Footer hidden while playing and in distraction-free mode. */}
+      {!distractionFree && !chromeHidden && (
         <div className="shrink-0 z-20 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
           <Footer />
         </div>
       )}
+
+      {/* Distraction-free toggle (also triggers browser fullscreen) */}
+      <button
+        type="button"
+        onClick={async () => {
+          const next = !distractionFree;
+          setDistractionFree(next);
+          if (!document.fullscreenEnabled) return;
+          try {
+            if (next && !document.fullscreenElement) {
+              await document.documentElement.requestFullscreen();
+            } else if (!next && document.fullscreenElement) {
+              await document.exitFullscreen();
+            }
+          } catch {
+            // Fullscreen request may be denied; keep the UI state change.
+          }
+        }}
+        className="fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-[var(--shadow-lift)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        title={distractionFree ? t("control.showUi") : t("control.hideUi")}
+        aria-label={distractionFree ? t("control.showUi") : t("control.hideUi")}
+      >
+        {distractionFree ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
+      </button>
     </div>
   );
 }

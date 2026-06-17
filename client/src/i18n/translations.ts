@@ -132,6 +132,9 @@ export const de = {
   "control.uploading": "Lädt hoch…",
   "control.disconnected": "Verbindung verloren. Lade die Seite neu, um sie wieder zu steuern.",
   "control.reload": "Neu laden",
+  "control.showUi": "Bedienung anzeigen",
+  "control.hideUi": "Ablenkungsfrei",
+  "control.noMarkers": "Noch keine Marker.",
 } as const;
 
 export type TKey = keyof typeof de;
@@ -260,6 +263,9 @@ export const en: Record<TKey, string> = {
   "control.uploading": "Uploading…",
   "control.disconnected": "Connection lost. Reload the page to regain control.",
   "control.reload": "Reload",
+  "control.showUi": "Show controls",
+  "control.hideUi": "Distraction free",
+  "control.noMarkers": "No markers yet.",
 };
 
 export const dictionaries: Record<Lang, Record<TKey, string>> = { de, en };
