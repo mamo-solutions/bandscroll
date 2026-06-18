@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { SessionState } from "../types.js";
 import type { SessionStoreAdapter } from "./sessionStoreAdapter.js";
+import { logger } from "../lib/logger.js";
 
 /**
  * SQLite-backed session store. Durable across restarts like FileSessionStore,
@@ -66,8 +67,9 @@ export class SqliteSessionStore implements SessionStoreAdapter {
         session.connectedClients = 0;
         session.updatedAt = Date.now();
         this.sessions.set(session.id, session);
-      } catch {
+      } catch (err) {
         // Skip a corrupt row rather than failing the whole load.
+        logger.warn("skipping corrupt session row", { err });
       }
     }
   }

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { SessionState } from "../types.js";
 import type { SessionStoreAdapter } from "./sessionStoreAdapter.js";
+import { logger } from "../lib/logger.js";
 
 /**
  * File-backed session store. Sessions are serialized to a single JSON file in
@@ -35,8 +36,12 @@ export class FileSessionStore implements SessionStoreAdapter {
         session.updatedAt = Date.now();
         this.sessions.set(session.id, session);
       }
-    } catch {
+    } catch (err) {
       // If the file is missing or corrupt, start fresh rather than crash.
+      logger.warn("session file load failed; starting fresh", {
+        filePath: this.filePath,
+        err,
+      });
       this.sessions.clear();
     }
   }

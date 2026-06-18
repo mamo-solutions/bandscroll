@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getSessionByCode, listPublicSessions } from "../sessionStore.js";
+import { logger } from "../lib/logger.js";
 
 export const publicRouter = Router();
 
@@ -14,7 +15,9 @@ publicRouter.post("/client-log", (req, res) => {
   const str = (v: unknown, max: number) =>
     typeof v === "string" ? v.replace(/\s+/g, " ").slice(0, max) : undefined;
 
-  console.error("[client-error]", {
+  // A client report is a warning, not a server fault — log it at warn so it's
+  // visible but doesn't inflate the server's own 5xx/error signal.
+  logger.warn("client-error", {
     context: str(body.context, 80),
     message: str(body.message, 500),
     url: str(body.url, 300),
@@ -22,7 +25,6 @@ publicRouter.post("/client-log", (req, res) => {
     userAgent: str(body.userAgent, 300),
     stack: str(body.stack, 1500),
     componentStack: str(body.componentStack, 1500),
-    at: new Date().toISOString(),
   });
   res.status(204).end();
 });

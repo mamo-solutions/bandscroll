@@ -141,6 +141,21 @@ describe("REST API", () => {
     expect(started.playing).toBe(true);
   });
 
+  it("guards the metrics endpoint and returns process + app stats to admins", async () => {
+    const anon = await fetch(`${base}/api/admin/metrics`);
+    expect(anon.status).toBe(401);
+
+    const cookie = await login();
+    const res = await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const snap = await json(res);
+    expect(snap.memory.rssMb).toBeGreaterThan(0);
+    expect(typeof snap.socket.adminSyncEvents).toBe("number");
+    expect(typeof snap.totalSessions).toBe("number");
+    // The request logger's finish handler feeds the registry, so requests counted.
+    expect(snap.http.totalRequests).toBeGreaterThan(0);
+  });
+
   it("rejects an unsupported upload type with 400", async () => {
     const cookie = await login();
     const { body } = await createSession(cookie);
@@ -253,6 +268,28 @@ describe("Socket.IO sync", () => {
     await sleep(300);
     expect(fired).toBe(true);
     listener.close();
+  });
+
+  it("counts admin-sync events into the metrics endpoint without per-event logging", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "SyncMetrics");
+
+    const before = (
+      await json(await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } }))
+    ).socket.adminSyncEvents;
+
+    const admin = await connect({ Cookie: cookie });
+    admin.emit("admin-join-session", body.id);
+    await sleep(100);
+    for (let i = 0; i < 5; i++) admin.emit("admin-sync", { sessionId: body.id, progress: i / 10 });
+    await sleep(200);
+
+    const after = (
+      await json(await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } }))
+    ).socket.adminSyncEvents;
+
+    expect(after).toBeGreaterThanOrEqual(before + 5);
+    admin.close();
   });
 
   it("swaps the PDF mid-session: resets progress, pauses, and notifies viewers", async () => {

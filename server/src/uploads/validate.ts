@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { logger } from "../lib/logger.js";
 
 /**
  * Validate that a file's contents match its claimed mimetype by checking
@@ -10,7 +11,8 @@ export function validateUploadFile(path: string, claimedMimetype: string): boole
   let header: Buffer;
   try {
     header = readFileSync(path);
-  } catch {
+  } catch (err) {
+    logger.warn("upload read failed during validation", { path, err });
     return false;
   }
   if (header.length === 0) return false;

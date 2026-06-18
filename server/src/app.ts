@@ -12,6 +12,9 @@ import { SqliteSessionStore } from "./store/sqliteSessionStore.js";
 import { publicRouter } from "./routes/publicRoutes.js";
 import { adminRouter } from "./routes/adminRoutes.js";
 import { initSocketServer } from "./sockets/socketServer.js";
+import { logger } from "./lib/logger.js";
+import { requestLogger } from "./middleware/requestLogger.js";
+import { errorHandler } from "./middleware/errorHandler.js";
 
 /**
  * Builds the fully wired Express app + HTTP server + Socket.IO, but does NOT
@@ -26,6 +29,10 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
         ? new SqliteSessionStore(env.DATA_DIR)
         : new MemorySessionStore();
   configureSessionStore(storeAdapter);
+  logger.info("storage backend selected", {
+    storage: env.STORAGE,
+    dataDir: env.STORAGE === "memory" ? undefined : env.DATA_DIR,
+  });
 
   const app = express();
   app.set("trust proxy", 1); // behind Caddy in production
@@ -40,6 +47,7 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   );
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(requestLogger);
   app.use(sessionMiddleware);
 
   // API routes
@@ -82,6 +90,9 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
       res.sendFile(resolve(clientDist, "index.html"));
     });
   }
+
+  // Global error handler — registered last so it catches errors from any route.
+  app.use(errorHandler);
 
   const httpServer = createServer(app);
   initSocketServer(httpServer, sessionMiddleware);

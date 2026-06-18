@@ -9,6 +9,8 @@ export default defineConfig({
     environment: "node",
     env: {
       NODE_ENV: "test",
+      // Keep suites quiet; logger.test.ts overrides this per-case via stubEnv.
+      LOG_LEVEL: "error",
       ADMIN_PASSWORD: "test-password-123",
       ADMIN_SESSION_SECRET: "test-session-secret-which-is-long-enough",
       UPLOAD_DIR: join(tmpdir(), "bandscroll-test-uploads"),

@@ -16,11 +16,18 @@ function required(name: string, fallback?: string): string {
 }
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
+const isProduction = NODE_ENV === "production";
 
 export const env = {
   NODE_ENV,
-  isProduction: NODE_ENV === "production",
+  isProduction,
   PORT: Number(process.env.PORT ?? 3000),
+  // Logging. LOG_LEVEL gates verbosity (debug < info < warn < error). LOG_FORMAT
+  // defaults to machine-readable JSON in prod and human-friendly pretty in dev.
+  LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
+  LOG_FORMAT: process.env.LOG_FORMAT ?? (isProduction ? "json" : "pretty"),
+  // Periodic performance-stats summary line. 0 disables it.
+  METRICS_INTERVAL_MS: Number(process.env.METRICS_INTERVAL_MS ?? 60_000),
   ADMIN_PASSWORD: required("ADMIN_PASSWORD", "change-me-now"),
   ADMIN_SESSION_SECRET: required(
     "ADMIN_SESSION_SECRET",

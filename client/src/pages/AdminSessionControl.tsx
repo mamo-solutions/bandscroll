@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api } from "@/api/client";
 import { getSocket } from "@/sockets/socket";
+import { reportError } from "@/lib/errorLog";
 import { auth } from "@/api/auth";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { PlaybackControls, type PlaybackControlsHandle } from "@/components/PlaybackControls";
@@ -119,7 +120,7 @@ export function AdminSessionControl() {
       if (s.id === id) setSession(s);
     };
     const onError = (e: { error: string }) =>
-      console.warn("admin socket error:", e?.error);
+      reportError("admin.socket", e?.error);
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);

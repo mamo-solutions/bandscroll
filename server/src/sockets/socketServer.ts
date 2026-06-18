@@ -10,6 +10,10 @@ import {
   clampProgress,
 } from "../sessionStore.js";
 import type { SessionState } from "../types.js";
+import { logger } from "../lib/logger.js";
+import { metrics } from "../lib/metrics.js";
+
+const log = logger.child("socket");
 
 let io: Server | null = null;
 
@@ -36,6 +40,8 @@ export function initSocketServer(
   io.engine.use(sessionMiddleware);
 
   io.on("connection", (socket) => {
+    log.info("connect", { id: socket.id, total: metrics.incSocket() });
+
     // Track which session room this socket counts towards so we can decrement
     // exactly once on leave/disconnect.
     let joinedSessionId: string | null = null;
@@ -58,6 +64,7 @@ export function initSocketServer(
           emitClientCount(session);
           broadcastSessionState(session);
         }
+        log.debug("room leave", { id: socket.id, code: session.code });
       }
       joinedSessionId = null;
       counted = false;
@@ -65,6 +72,7 @@ export function initSocketServer(
 
     // ---- Public client events ----
     socket.on("join-session", (code: string) => {
+      metrics.recordSocketEvent("join-session");
       const session = getSessionByCode(String(code ?? ""));
       if (!session) {
         socket.emit("session-not-found", { code });
@@ -78,11 +86,20 @@ export function initSocketServer(
       socket.emit("session-state", session);
       emitClientCount(session);
       broadcastSessionState(session);
+      log.info("room join", {
+        id: socket.id,
+        code: session.code,
+        connectedClients: session.connectedClients,
+      });
     });
 
-    socket.on("leave-session", () => leaveCurrent());
+    socket.on("leave-session", () => {
+      metrics.recordSocketEvent("leave-session");
+      leaveCurrent();
+    });
 
     socket.on("request-session-state", (codeOrId?: string) => {
+      metrics.recordSocketEvent("request-session-state");
       const session =
         (joinedSessionId ? getSessionById(joinedSessionId) : undefined) ??
         getSessionByCode(String(codeOrId ?? "")) ??
@@ -92,8 +109,10 @@ export function initSocketServer(
     });
 
     // ---- Admin events (server-side authenticated) ----
-    const guardAdmin = (): boolean => {
+    const guardAdmin = (event: string): boolean => {
+      metrics.recordSocketEvent(event);
       if (isAdminSocket(socket)) return true;
+      log.warn("admin denied", { id: socket.id, event });
       socket.emit("admin-error", { error: "unauthorized" });
       return false;
     };
@@ -108,7 +127,7 @@ export function initSocketServer(
     };
 
     socket.on("admin-join-session", (sessionId: string) => {
-      if (!guardAdmin()) return;
+      if (!guardAdmin("admin-join-session")) return;
       const session = getSessionById(String(sessionId ?? ""));
       if (!session) {
         socket.emit("session-not-found", { id: sessionId });
@@ -116,28 +135,37 @@ export function initSocketServer(
       }
       socket.join(roomFor(session.code));
       socket.emit("session-state", session);
+      log.info("admin join", { id: socket.id, code: session.code });
     });
 
     socket.on("admin-play", (sessionId: string) => {
-      if (!guardAdmin()) return;
+      if (!guardAdmin("admin-play")) return;
       adminUpdate(String(sessionId), { playing: true, status: "live" });
+      log.info("admin play", { id: socket.id, sessionId: String(sessionId) });
     });
 
     socket.on("admin-pause", (sessionId: string) => {
-      if (!guardAdmin()) return;
+      if (!guardAdmin("admin-pause")) return;
       adminUpdate(String(sessionId), { playing: false });
+      log.info("admin pause", { id: socket.id, sessionId: String(sessionId) });
     });
 
     socket.on("admin-stop", (sessionId: string) => {
-      if (!guardAdmin()) return;
+      if (!guardAdmin("admin-stop")) return;
       adminUpdate(String(sessionId), { playing: false, progress: 0 });
+      log.info("admin stop", { id: socket.id, sessionId: String(sessionId) });
     });
 
     socket.on(
       "admin-seek",
       (payload: { sessionId: string; progress: number }) => {
-        if (!guardAdmin()) return;
+        if (!guardAdmin("admin-seek")) return;
         adminUpdate(String(payload?.sessionId), {
+          progress: clampProgress(Number(payload?.progress)),
+        });
+        log.info("admin seek", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
           progress: clampProgress(Number(payload?.progress)),
         });
       }
@@ -146,34 +174,50 @@ export function initSocketServer(
     socket.on(
       "admin-set-speed",
       (payload: { sessionId: string; speed: number }) => {
-        if (!guardAdmin()) return;
+        if (!guardAdmin("admin-set-speed")) return;
         const speed = Math.max(0, Number(payload?.speed) || 0);
         adminUpdate(String(payload?.sessionId), { speed });
+        log.info("admin set-speed", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          speed,
+        });
       }
     );
 
     socket.on(
       "admin-set-markers",
       (payload: { sessionId: string; markers: SessionState["markers"] }) => {
-        if (!guardAdmin()) return;
+        if (!guardAdmin("admin-set-markers")) return;
         const markers = Array.isArray(payload?.markers) ? payload.markers : [];
         adminUpdate(String(payload?.sessionId), { markers });
-      }
-    );
-
-    // Lightweight periodic sync sent ~every 250ms while playing.
-    socket.on(
-      "admin-sync",
-      (payload: { sessionId: string; progress: number; playing?: boolean }) => {
-        if (!guardAdmin()) return;
-        adminUpdate(String(payload?.sessionId), {
-          progress: clampProgress(Number(payload?.progress)),
-          ...(payload?.playing !== undefined ? { playing: payload.playing } : {}),
+        log.info("admin set-markers", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          count: markers.length,
         });
       }
     );
 
-    socket.on("disconnect", () => leaveCurrent());
+    // Lightweight periodic sync sent ~every 250ms while playing. Logged at debug
+    // only (dropped at the default level) — throughput is surfaced via the
+    // adminSyncEvents counter in the metrics summary instead.
+    socket.on(
+      "admin-sync",
+      (payload: { sessionId: string; progress: number; playing?: boolean }) => {
+        if (!guardAdmin("admin-sync")) return;
+        adminUpdate(String(payload?.sessionId), {
+          progress: clampProgress(Number(payload?.progress)),
+          ...(payload?.playing !== undefined ? { playing: payload.playing } : {}),
+        });
+        log.debug("admin sync", { id: socket.id, sessionId: String(payload?.sessionId) });
+      }
+    );
+
+    socket.on("disconnect", (reason: string) => {
+      leaveCurrent();
+      log.info("disconnect", { id: socket.id, reason, total: metrics.decSocket() });
+    });
   });
 
   return io;

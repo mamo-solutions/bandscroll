@@ -94,9 +94,30 @@ All configuration is via the root `.env` (see `.env.example`):
 | `PUBLIC_BASE_URL` | Public base URL, used for shareable links. |
 | `STORAGE` | `memory` (default), `file`, or `sqlite` for persisted sessions. |
 | `DATA_DIR` | Where `sessions.json` (`file`) or `sessions.db` (`sqlite`) is stored. |
+| `LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. |
+| `METRICS_INTERVAL_MS` | Performance-stats summary interval in ms (default `60000`, `0` disables). |
 
 There is intentionally **no** `VITE_ADMIN_PASSWORD`: the password is POSTed once
 and authentication lives in an http-only cookie.
+
+## Observability
+
+The server emits **structured logs** — one JSON object per line in production
+(`{level,time,msg,...}`, grep/scrape friendly) and a compact pretty form in
+development. Verbosity is gated by `LOG_LEVEL`. HTTP requests (method, path,
+status, duration), Socket.IO lifecycle (connect/disconnect/room joins/admin
+denials), and storage/upload warnings are all logged; the high-frequency
+`admin-sync` loop logs only at `debug`, so it never floods the log at the
+default level.
+
+**Performance stats** are summarized to the log every `METRICS_INTERVAL_MS`
+(`msg: "metrics"`) and served live, admin-only, at `GET /api/admin/metrics`:
+process memory/uptime, active sockets, session + viewer counts, HTTP throughput
+and latency, and socket-event rates (including `adminSync` throughput).
+
+The client reports uncaught errors (and socket connection failures) to
+`POST /api/client-log`, rate-limited to 10/min, so crashes without a visible
+console — notably mobile Safari — still land in the server log.
 
 ## Deployment
 

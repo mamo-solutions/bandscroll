@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import type { Request, Response, NextFunction } from "express";
 import { env } from "../env.js";
 import { checkPassword, requireAdmin } from "../auth.js";
+import { logger } from "../lib/logger.js";
+import { metrics } from "../lib/metrics.js";
 import { validateUploadFile } from "../uploads/validate.js";
 import {
   createSession,
@@ -109,6 +111,12 @@ adminRouter.get("/sessions", (_req, res) => {
   res.json(listAdminSessions());
 });
 
+// Live performance stats (process + app). Admin-guarded so process internals
+// aren't exposed publicly on a self-hosted box.
+adminRouter.get("/metrics", (_req, res) => {
+  res.json(metrics.snapshot());
+});
+
 adminRouter.post("/sessions", (req, res) => {
   const title = String(req.body?.title ?? "").trim();
   if (!title) {
@@ -151,8 +159,8 @@ adminRouter.post(
       // content did not match. Delete the saved file and reject the upload.
       try {
         unlinkSync(req.file.path);
-      } catch {
-        /* ignore cleanup errors */
+      } catch (err) {
+        logger.warn("upload cleanup failed", { path: req.file.path, err });
       }
       res.status(400).json({ error: "pdf-content-mismatch" });
       return;
