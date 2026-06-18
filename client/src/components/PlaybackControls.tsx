@@ -16,6 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import {
+  SPEED_MAX,
+  SPEED_MIN,
+  calculateSpeedFromBpm,
+  deriveBpmFromTaps,
+} from "@/lib/tempo";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { SessionState } from "@/types/session";
 
@@ -24,8 +30,6 @@ import type { SessionState } from "@/types/session";
 // gentle). Fine-tune beyond these with the Manual +/- steppers.
 const SPEED_PRESETS = [0.00005, 0.0001, 0.0002, 0.0003, 0.0005];
 const SPEED_STEP = 0.000005;
-const SPEED_MIN = 0.00001;
-const SPEED_MAX = 0.002;
 
 const BEATS_PRESETS = [
   { labelKey: "controls.beatsShort", value: 128 },
@@ -126,14 +130,6 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     applySpeed(Number(next.toFixed(6)));
   }
 
-  function calculateSpeedFromBpm(detectedBpm: number): number {
-    const pages = Number(pagesPerSong);
-    if (!pages || !beatsPerSong || !numPages || detectedBpm <= 0) return 0;
-    const songProgress = Math.min(1, pages / numPages);
-    const songDurationSeconds = beatsPerSong / (detectedBpm / 60);
-    return Math.min(SPEED_MAX, Math.max(SPEED_MIN, songProgress / songDurationSeconds));
-  }
-
   function handleTap() {
     const now = Date.now();
     const taps = tapsRef.current;
@@ -151,14 +147,8 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     setPulse(true);
     setTimeout(() => setPulse(false), 120);
 
-    if (taps.length < 2) return;
-
-    const intervals: number[] = [];
-    for (let i = 1; i < taps.length; i++) {
-      intervals.push(taps[i] - taps[i - 1]);
-    }
-    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-    const detectedBpm = Math.round(60000 / avgInterval);
+    const detectedBpm = deriveBpmFromTaps(taps);
+    if (detectedBpm === null) return;
     setBpm(detectedBpm);
 
     // Auto-apply once we have at least 4 taps and are outside the cooldown.
@@ -166,7 +156,12 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
       taps.length >= TAP_MIN_TAPS &&
       now - lastAppliedRef.current >= TAP_COOLDOWN_MS
     ) {
-      const speed = calculateSpeedFromBpm(detectedBpm);
+      const speed = calculateSpeedFromBpm({
+        detectedBpm,
+        pagesPerSong: Number(pagesPerSong),
+        beatsPerSong,
+        numPages,
+      });
       if (speed > 0) {
         applySpeed(speed, true);
         setAcceptedBpm(detectedBpm);

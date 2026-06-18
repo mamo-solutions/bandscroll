@@ -8,6 +8,7 @@ import { sessionMiddleware } from "./auth.js";
 import { configureSessionStore } from "./sessionStore.js";
 import { MemorySessionStore } from "./store/memorySessionStore.js";
 import { FileSessionStore } from "./store/fileSessionStore.js";
+import { SqliteSessionStore } from "./store/sqliteSessionStore.js";
 import { publicRouter } from "./routes/publicRoutes.js";
 import { adminRouter } from "./routes/adminRoutes.js";
 import { initSocketServer } from "./sockets/socketServer.js";
@@ -21,7 +22,9 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   const storeAdapter =
     env.STORAGE === "file"
       ? new FileSessionStore(env.DATA_DIR)
-      : new MemorySessionStore();
+      : env.STORAGE === "sqlite"
+        ? new SqliteSessionStore(env.DATA_DIR)
+        : new MemorySessionStore();
   configureSessionStore(storeAdapter);
 
   const app = express();

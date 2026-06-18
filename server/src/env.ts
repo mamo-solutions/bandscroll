@@ -30,7 +30,8 @@ export const env = {
   UPLOAD_DIR: resolve(process.cwd(), process.env.UPLOAD_DIR ?? "../uploads"),
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL ?? "http://localhost:3000",
   // Storage backend. "memory" keeps the original zero-config behaviour;
-  // "file" persists sessions to DATA_DIR/sessions.json across restarts.
+  // "file" persists sessions to DATA_DIR/sessions.json across restarts;
+  // "sqlite" persists them to DATA_DIR/sessions.db (durable per-write).
   STORAGE: process.env.STORAGE ?? "memory",
   DATA_DIR: resolve(process.cwd(), process.env.DATA_DIR ?? "../data"),
 };

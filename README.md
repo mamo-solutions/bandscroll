@@ -57,8 +57,8 @@ on the server and shared between HTTP and WebSocket via a single session.
 - **Frontend:** React + Vite + TypeScript, React Router, `react-pdf` (PDF.js),
   `socket.io-client`, Tailwind v4 with shadcn-style components, PWA.
 - **Backend:** Node + TypeScript + Express, Socket.IO, `express-session`,
-  `multer` for uploads. Pluggable storage: in-memory by default, or file-backed
-  persistence via `STORAGE=file` (no database required).
+  `multer` for uploads. Pluggable storage: in-memory by default, file-backed
+  JSON via `STORAGE=file`, or SQLite via `STORAGE=sqlite` (durable per-write).
 - **Tests:** Vitest (unit + an integration suite that boots the real server).
 
 ## Quick start
@@ -92,8 +92,8 @@ All configuration is via the root `.env` (see `.env.example`):
 | `ADMIN_SESSION_SECRET` | Long random string used to sign the session cookie. |
 | `UPLOAD_DIR` | Where uploaded PDFs are stored. |
 | `PUBLIC_BASE_URL` | Public base URL, used for shareable links. |
-| `STORAGE` | `memory` (default) or `file` for persisted sessions. |
-| `DATA_DIR` | Where `sessions.json` is stored when `STORAGE=file`. |
+| `STORAGE` | `memory` (default), `file`, or `sqlite` for persisted sessions. |
+| `DATA_DIR` | Where `sessions.json` (`file`) or `sessions.db` (`sqlite`) is stored. |
 
 There is intentionally **no** `VITE_ADMIN_PASSWORD`: the password is POSTed once
 and authentication lives in an http-only cookie.
@@ -136,12 +136,12 @@ bandscroll/
 
 ## Limitations & roadmap
 
-Sessions default to in-memory storage; set `STORAGE=file` in `.env` to persist
-them across restarts. Uploads are garbage-collected when a session is deleted or
-its PDF is replaced, provided no other session references the same file. There is
-a single shared host password (no per-user accounts). Possible next steps: a
-SQLite/Postgres adapter, a Redis adapter for horizontal scaling, multi-file setlists,
-and per-user roles.
+Sessions default to in-memory storage; set `STORAGE=file` (JSON) or
+`STORAGE=sqlite` (durable per-write) in `.env` to persist them across restarts.
+Uploads are garbage-collected when a session is deleted or its PDF is replaced,
+provided no other session references the same file. There is a single shared
+host password (no per-user accounts). Possible next steps: a Postgres adapter, a
+Redis adapter for horizontal scaling, multi-file setlists, and per-user roles.
 
 ## Contributing
 
