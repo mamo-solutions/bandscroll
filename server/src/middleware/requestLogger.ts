@@ -17,9 +17,6 @@ export const requestLogger: RequestHandler = (req, res, next) => {
     const status = res.statusCode;
     metrics.recordRequest(durationMs, status);
 
-    // req.path is relative to the router mount in a finish handler, so use
-    // originalUrl (strip any query string) for an absolute path to match on.
-    const path = req.originalUrl.split("?")[0];
     const fields = {
       method: req.method,
       path: req.originalUrl,
@@ -27,13 +24,11 @@ export const requestLogger: RequestHandler = (req, res, next) => {
       durationMs: Math.round(durationMs * 100) / 100,
     };
 
-    const isNoise =
-      status < 400 && (path === "/api/health" || /\/assets\//.test(path));
-
+    // Successful requests are debug-only so they don't flood the log at the
+    // default level; client/server faults stay visible at warn/error.
     if (status >= 500) log.error("request", fields);
     else if (status >= 400) log.warn("request", fields);
-    else if (isNoise) log.debug("request", fields);
-    else log.info("request", fields);
+    else log.debug("request", fields);
   });
 
   next();
