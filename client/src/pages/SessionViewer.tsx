@@ -269,6 +269,7 @@ export function SessionViewer() {
             key={pdfUrl}
             ref={viewerRef}
             fileUrl={pdfUrl}
+            visiblePage={session?.playbackMode === "page" ? session.currentPage : undefined}
             blockUserScroll
             onDocumentLoad={setNumPages}
           />

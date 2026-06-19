@@ -1,7 +1,20 @@
 import { useState } from "react";
-import { FileEdit, FileUp, FileWarning, Music, RefreshCw, Trash2 } from "lucide-react";
+import {
+  FileEdit,
+  FileUp,
+  FileWarning,
+  Music,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -25,7 +38,9 @@ type Props = {
   onSeekToMarker: (page: number) => void;
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
   onShortcutBindingChange: (slot: AdminShortcutSlot, code: string) => void;
-  onShortcutPresetChange: (presetId: Exclude<AdminShortcutPresetId, "custom">) => void;
+  onShortcutPresetChange: (
+    presetId: Exclude<AdminShortcutPresetId, "custom">,
+  ) => void;
   shortcutBindings: AdminShortcutBindings;
   shortcutPreset: AdminShortcutPresetId;
 };
@@ -47,9 +62,15 @@ export function AdminSessionSetupPanel({
   const { t } = useI18n();
   const [markerTitle, setMarkerTitle] = useState("");
   const [markerPage, setMarkerPage] = useState("");
-  const shortcutFields: ReadonlyArray<{ slot: AdminShortcutSlot; label: string }> = [
+  const shortcutFields: ReadonlyArray<{
+    slot: AdminShortcutSlot;
+    label: string;
+  }> = [
     { slot: "playPausePrimary", label: t("control.shortcutPlayPausePrimary") },
-    { slot: "playPauseSecondary", label: t("control.shortcutPlayPauseSecondary") },
+    {
+      slot: "playPauseSecondary",
+      label: t("control.shortcutPlayPauseSecondary"),
+    },
     { slot: "tapTempo", label: t("control.shortcutTapTempo") },
     { slot: "speedUp", label: t("control.shortcutSpeedUp") },
     { slot: "speedDown", label: t("control.shortcutSpeedDown") },
@@ -70,13 +91,19 @@ export function AdminSessionSetupPanel({
           </div>
         </CardHeader>
 
-        <CardContent className="flex flex-col gap-5 pt-8">
+        <CardContent className="flex flex-col gap-5 pt-4">
           <section className="rounded-xl border border-border/70 bg-muted/35 px-4 pb-4 pt-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-heading text-base font-semibold">{t("control.document")}</h3>
+                <h3 className="font-heading text-base font-semibold">
+                  {t("control.document")}
+                </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {t(session.pdfUrl ? "control.documentReady" : "control.documentMissing")}
+                  {t(
+                    session.pdfUrl
+                      ? "control.documentReady"
+                      : "control.documentMissing",
+                  )}
                 </p>
               </div>
               <span
@@ -84,10 +111,14 @@ export function AdminSessionSetupPanel({
                   "inline-flex size-10 shrink-0 items-center justify-center rounded-xl border",
                   session.pdfUrl
                     ? "border-success/20 bg-success/10 text-success"
-                    : "border-warning/30 bg-warning/10 text-warning"
+                    : "border-warning/30 bg-warning/10 text-warning",
                 )}
               >
-                {session.pdfUrl ? <FileEdit className="size-4" /> : <FileWarning className="size-4" />}
+                {session.pdfUrl ? (
+                  <FileEdit className="size-4" />
+                ) : (
+                  <FileWarning className="size-4" />
+                )}
               </span>
             </div>
 
@@ -115,8 +146,12 @@ export function AdminSessionSetupPanel({
           <section className="rounded-xl border border-border/70 bg-muted/35 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-heading text-base font-semibold">{t("controls.playbackMode")}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t("control.switchModeHint")}</p>
+                <h3 className="font-heading text-base font-semibold">
+                  {t("controls.playbackMode")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("control.switchModeHint")}
+                </p>
               </div>
             </div>
 
@@ -130,10 +165,12 @@ export function AdminSessionSetupPanel({
                     "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
                     session.playbackMode === mode
                       ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {mode === "scroll" ? t("controls.scrollMode") : t("controls.pageMode")}
+                  {mode === "scroll"
+                    ? t("controls.scrollMode")
+                    : t("controls.pageMode")}
                 </button>
               ))}
             </div>
@@ -142,8 +179,12 @@ export function AdminSessionSetupPanel({
           <section className="rounded-xl border border-border/70 bg-muted/35 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-heading text-base font-semibold">{t("controls.setlist")}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t("control.markerHint")}</p>
+                <h3 className="font-heading text-base font-semibold">
+                  {t("controls.setlist")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("control.markerHint")}
+                </p>
               </div>
               <Badge variant="outline">{session.markers?.length ?? 0}</Badge>
             </div>
@@ -200,7 +241,9 @@ export function AdminSessionSetupPanel({
                       title={t("controls.seekToMarker")}
                     >
                       <Music className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 truncate font-medium">{marker.title}</span>
+                      <span className="min-w-0 truncate font-medium">
+                        {marker.title}
+                      </span>
                       <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
                         {t("controls.markerPageShort", { page: marker.page })}
                       </span>
@@ -220,11 +263,18 @@ export function AdminSessionSetupPanel({
             )}
           </section>
 
-          <details className="group rounded-xl border border-border/70 bg-muted/35" open={false}>
+          <details
+            className="group rounded-xl border border-border/70 bg-muted/35"
+            open={false}
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4">
               <div>
-                <h3 className="font-heading text-base font-semibold">{t("control.shortcutsTitle")}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t("control.shortcutsDesc")}</p>
+                <h3 className="font-heading text-base font-semibold">
+                  {t("control.shortcutsTitle")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("control.shortcutsDesc")}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">
@@ -256,25 +306,47 @@ export function AdminSessionSetupPanel({
                       onShortcutPresetChange(value);
                     }}
                   >
-                    <option value="footswitch">{t("control.shortcutsPresetFootswitch")}</option>
-                    <option value="media">{t("control.shortcutsPresetMedia")}</option>
-                    <option value="numpad">{t("control.shortcutsPresetNumpad")}</option>
-                    <option value="custom">{t("control.shortcutsPresetCustom")}</option>
+                    <option value="footswitch">
+                      {t("control.shortcutsPresetFootswitch")}
+                    </option>
+                    <option value="media">
+                      {t("control.shortcutsPresetMedia")}
+                    </option>
+                    <option value="numpad">
+                      {t("control.shortcutsPresetNumpad")}
+                    </option>
+                    <option value="custom">
+                      {t("control.shortcutsPresetCustom")}
+                    </option>
                   </Select>
-                  <p className="text-xs text-muted-foreground">{t("control.shortcutsPresetHint")}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("control.shortcutsPresetHint")}
+                  </p>
                 </div>
 
                 <div className="grid gap-3">
                   {shortcutFields.map(({ slot, label }) => (
-                    <div key={slot} className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center sm:gap-3">
-                      <label className="text-sm font-medium text-foreground">{label}</label>
+                    <div
+                      key={slot}
+                      className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center sm:gap-3"
+                    >
+                      <label className="text-sm font-medium text-foreground">
+                        {label}
+                      </label>
                       <Select
                         value={shortcutBindings[slot]}
-                        onChange={(e) => onShortcutBindingChange(slot, e.target.value)}
+                        onChange={(e) =>
+                          onShortcutBindingChange(slot, e.target.value)
+                        }
                       >
                         {SHORTCUT_OPTIONS.map((option) => (
-                          <option key={option.code || "none"} value={option.code}>
-                            {option.code === "" ? t("control.shortcutsNone") : option.label}
+                          <option
+                            key={option.code || "none"}
+                            value={option.code}
+                          >
+                            {option.code === ""
+                              ? t("control.shortcutsNone")
+                              : option.label}
                           </option>
                         ))}
                       </Select>

@@ -649,6 +649,7 @@ export function AdminSessionControl() {
                   key={session.pdfUrl}
                   ref={viewerRef}
                   fileUrl={session.pdfUrl}
+                  visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
                   onUserScroll={(progress) => {
                     if (stateRef.current?.playing) return;
                     if (stateRef.current?.playbackMode === "page") {

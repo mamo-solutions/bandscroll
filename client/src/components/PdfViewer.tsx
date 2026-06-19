@@ -44,6 +44,8 @@ export type PdfViewerHandle = {
 
 type Props = {
   fileUrl: string;
+  /** When set, render only this page instead of the full scrollable document. */
+  visiblePage?: number;
   /** Called (already DOM-throttled by rAF) when the user scrolls manually. */
   onUserScroll?: (progress: number) => void;
   /** Called when a PDF finishes loading with its page count. */
@@ -54,7 +56,7 @@ type Props = {
 };
 
 export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
-  { fileUrl, onUserScroll, onDocumentLoad, blockUserScroll },
+  { fileUrl, visiblePage, onUserScroll, onDocumentLoad, blockUserScroll },
   ref
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const [numPages, setNumPages] = useState(0);
   // CSS display width of each page/image wrapper (responsive).
   const [displayWidth, setDisplayWidth] = useState(800);
+  const [containerHeight, setContainerHeight] = useState(0);
   // Page aspect ratio (height / width), measured from the first page. Pages in a
   // setlist PDF are uniform, so one value reserves space for all of them.
   const [aspect, setAspect] = useState<number | null>(null);
@@ -74,6 +77,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const { t } = useI18n();
 
   const isImage = IMAGE_RE.test(fileUrl);
+  const singlePageMode = visiblePage !== undefined;
+  const clampedVisiblePage = clampPage(visiblePage ?? 1, numPages);
 
   // Reset everything whenever the file changes (initial load or swap).
   useEffect(() => {
@@ -94,14 +99,20 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   }, [isImage, loading, aspect]);
 
   const reservedHeight = aspect ? Math.max(1, Math.round(displayWidth * aspect)) : undefined;
+  const singlePageWidth =
+    singlePageMode && aspect && containerHeight > 0
+      ? Math.max(280, Math.min(displayWidth, Math.floor((containerHeight - 24) / aspect)))
+      : displayWidth;
 
   const maxScroll = () => {
+    if (singlePageMode) return 1;
     const el = scrollRef.current;
     if (!el) return 0;
     return Math.max(1, el.scrollHeight - el.clientHeight);
   };
 
   const getProgressForPage = (page: number) => {
+    if (singlePageMode || !pageRefs.current[page - 1]) return pageProgress(page, numPages);
     const el = scrollRef.current;
     const pageEl = pageRefs.current[page - 1];
     if (!el || !pageEl) return 0;
@@ -109,6 +120,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   };
 
   const getCurrentPage = () => {
+    if (singlePageMode) return clampedVisiblePage;
     const el = scrollRef.current;
     if (!el || numPages <= 1) return 1;
 
@@ -132,17 +144,27 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       scrollToProgress(progress: number) {
         const el = scrollRef.current;
         if (!el || !readyRef.current) return;
+        if (singlePageMode) {
+          el.scrollTop = 0;
+          return;
+        }
         el.scrollTop = clamp01(progress) * maxScroll();
       },
       scrollToPage(page: number) {
         const el = scrollRef.current;
+        if (!el) return;
+        if (singlePageMode) {
+          el.scrollTop = 0;
+          return;
+        }
         const pageEl = pageRefs.current[page - 1];
-        if (!el || !pageEl) return;
+        if (!pageEl) return;
         el.scrollTop = pageEl.offsetTop;
       },
       getProgressForPage,
       getCurrentPage,
       getCurrentProgress() {
+        if (singlePageMode) return pageProgress(clampedVisiblePage, numPages);
         const el = scrollRef.current;
         if (!el) return 0;
         return clamp01(el.scrollTop / maxScroll());
@@ -151,7 +173,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return numPages;
       },
     }),
-    [getProgressForPage, numPages]
+    [clampedVisiblePage, getProgressForPage, numPages, singlePageMode]
   );
 
   // Responsive display width — only drives CSS sizing of already-rasterized
@@ -162,6 +184,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const measure = () => {
       const w = Math.min(RENDER_WIDTH, el.clientWidth - 24);
       setDisplayWidth(Math.max(280, w));
+      setContainerHeight(el.clientHeight);
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -171,6 +194,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   // Compute which pages should be mounted based on the current scroll position.
   const updateRange = useCallback(() => {
+    if (singlePageMode) {
+      const index = Math.max(0, clampedVisiblePage - 1);
+      setRange({ start: index, end: index });
+      return;
+    }
     const el = scrollRef.current;
     if (!el || aspect == null || numPages === 0) return;
     const row = Math.max(1, Math.round(displayWidth * aspect)) + PAGE_GAP;
@@ -178,7 +206,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const start = Math.max(0, Math.floor(top / row) - OVERSCAN);
     const end = Math.min(numPages - 1, Math.floor((top + el.clientHeight) / row) + OVERSCAN);
     setRange((r) => (r.start === start && r.end === end ? r : { start, end }));
-  }, [aspect, numPages, displayWidth]);
+  }, [aspect, clampedVisiblePage, numPages, displayWidth, singlePageMode]);
 
   // Recompute the visible window when geometry changes.
   useEffect(() => {
@@ -218,9 +246,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       rafPending.current = false;
       updateRange();
       const el = scrollRef.current;
-      if (onUserScroll && el) onUserScroll(clamp01(el.scrollTop / maxScroll()));
+      if (onUserScroll && el) {
+        onUserScroll(singlePageMode ? pageProgress(clampedVisiblePage, numPages) : clamp01(el.scrollTop / maxScroll()));
+      }
     });
-  }, [onUserScroll, updateRange]);
+  }, [clampedVisiblePage, numPages, onUserScroll, singlePageMode, updateRange]);
 
   const centerMsg = "flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground";
 
@@ -245,7 +275,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       {error ? (
         <div className={centerMsg}>{t("viewer.fileError")}</div>
       ) : isImage ? (
-        <div className="flex flex-col items-center px-2 pb-[55vh] pt-3 sm:px-4">
+        <div
+          className={cn(
+            "flex flex-col items-center px-2 pt-3 sm:px-4",
+            singlePageMode ? "h-full justify-center pb-3" : "pb-[55vh]"
+          )}
+        >
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-muted/40">
               {spinner}
@@ -282,20 +317,31 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           loading={spinner}
           error={<div className={centerMsg}>{t("viewer.fileError")}</div>}
         >
-          <div className="flex flex-col items-center gap-3 px-2 pb-[55vh] pt-3 sm:px-4">
+          <div
+            className={cn(
+              "px-2 pt-3 sm:px-4",
+              singlePageMode
+                ? "flex h-full items-center justify-center pb-3"
+                : "flex flex-col items-center gap-3 pb-[55vh]"
+            )}
+          >
             {Array.from({ length: numPages }, (_, i) => {
-              const mounted = i >= range.start && i <= range.end;
+              if (singlePageMode && i !== clampedVisiblePage - 1) return null;
+              const mounted = singlePageMode || (i >= range.start && i <= range.end);
               return (
                 <div
                   key={i}
                   ref={(el) => { pageRefs.current[i] = el; }}
                   className="pdf-page-fit overflow-hidden rounded-lg bg-card shadow-[var(--shadow-lift)]"
-                  style={{ width: displayWidth, height: reservedHeight }}
+                  style={{
+                    width: singlePageMode ? singlePageWidth : displayWidth,
+                    height: singlePageMode ? undefined : reservedHeight,
+                  }}
                 >
                   {mounted && (
                     <Page
                       pageNumber={i + 1}
-                      width={RENDER_WIDTH}
+                      width={singlePageMode ? singlePageWidth : RENDER_WIDTH}
                       devicePixelRatio={PAGE_DPR}
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
@@ -325,4 +371,15 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 function clamp01(v: number): number {
   if (Number.isNaN(v)) return 0;
   return Math.min(1, Math.max(0, v));
+}
+
+function clampPage(page: number, numPages: number): number {
+  if (!Number.isFinite(page)) return 1;
+  if (numPages <= 1) return 1;
+  return Math.min(numPages, Math.max(1, Math.round(page)));
+}
+
+function pageProgress(page: number, numPages: number): number {
+  if (numPages <= 1) return 0;
+  return clamp01((clampPage(page, numPages) - 1) / (numPages - 1));
 }
