@@ -164,6 +164,8 @@ export function SessionViewer() {
   // short idle so the score gets the full screen. Any interaction reveals them
   // again (and re-arms the timer), so the user is never trapped.
   const playing = session?.playing ?? false;
+  const pageMode = session?.playbackMode === "page";
+  const reserveChromeSpace = pageMode && !distractionFree && !chromeHidden;
   useEffect(() => {
     if (!playing) {
       setChromeHidden(false);
@@ -264,20 +266,28 @@ export function SessionViewer() {
 
       {/* Document area */}
       <div className="relative flex-1 overflow-hidden">
-        {pdfUrl ? (
-          <PdfViewer
-            key={pdfUrl}
-            ref={viewerRef}
-            fileUrl={pdfUrl}
-            visiblePage={session?.playbackMode === "page" ? session.currentPage : undefined}
-            blockUserScroll
-            onDocumentLoad={setNumPages}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
-            {t("viewer.noPdf")}
-          </div>
-        )}
+        <div
+          className={cn(
+            "h-full",
+            reserveChromeSpace &&
+              "pt-[calc(3.5rem+env(safe-area-inset-top)+0.75rem)] pb-[calc(4.5rem+env(safe-area-inset-bottom)+0.75rem)]"
+          )}
+        >
+          {pdfUrl ? (
+            <PdfViewer
+              key={pdfUrl}
+              ref={viewerRef}
+              fileUrl={pdfUrl}
+              visiblePage={pageMode ? session.currentPage : undefined}
+              blockUserScroll
+              onDocumentLoad={setNumPages}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
+              {t("viewer.noPdf")}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer hidden while playing and in distraction-free mode. */}
