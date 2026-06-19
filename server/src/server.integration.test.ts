@@ -125,6 +125,8 @@ describe("REST API", () => {
     expect(status).toBe(201);
     expect(body.code).toMatch(/^SESSION-/);
     expect(body.status).toBe("draft");
+    expect(body.playbackMode).toBe("scroll");
+    expect(body.currentPage).toBe(1);
 
     // Newly created (draft) session is immediately public.
     const pub = await json(await fetch(`${base}/api/sessions/public`));
@@ -259,6 +261,35 @@ describe("Socket.IO sync", () => {
     admin.close();
   });
 
+  it("broadcasts page-mode changes and page jumps to viewers", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Paged");
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+
+    const admin = await connect({ Cookie: cookie });
+    admin.emit("admin-join-session", body.id);
+    await sleep(150);
+    admin.emit("admin-set-playback-mode", {
+      sessionId: body.id,
+      playbackMode: "page",
+      currentPage: 2,
+      progress: 0.4,
+    });
+
+    const paged = await waitForState(viewer, (s) => s.playbackMode === "page");
+    expect(paged.currentPage).toBe(2);
+
+    admin.emit("admin-set-page", { sessionId: body.id, page: 3 });
+    const jumped = await waitForState(viewer, (s) => s.currentPage === 3);
+    expect(jumped.playbackMode).toBe("page");
+
+    viewer.close();
+    admin.close();
+  });
+
   it("notifies connected clients when a new session is created", async () => {
     const cookie = await login();
     const listener = await connect();
@@ -290,6 +321,36 @@ describe("Socket.IO sync", () => {
 
     expect(after).toBeGreaterThanOrEqual(before + 5);
     admin.close();
+  });
+
+  it("rejects page-mode admin events from an unauthenticated socket", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Guarded page");
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+
+    let lastState: any = null;
+    viewer.on("session-state", (s: any) => {
+      lastState = s;
+    });
+
+    const anon = await connect();
+    const errMode = once(anon, "admin-error");
+    anon.emit("admin-set-playback-mode", { sessionId: body.id, playbackMode: "page" });
+    await expect(errMode).resolves.toBeTruthy();
+
+    const errPage = once(anon, "admin-error");
+    anon.emit("admin-set-page", { sessionId: body.id, page: 4 });
+    await expect(errPage).resolves.toBeTruthy();
+    await sleep(300);
+
+    expect(lastState?.playbackMode ?? "scroll").toBe("scroll");
+    expect(lastState?.currentPage ?? 1).toBe(1);
+
+    viewer.close();
+    anon.close();
   });
 
   it("swaps the PDF mid-session: resets progress, pauses, and notifies viewers", async () => {
@@ -331,9 +392,11 @@ describe("Socket.IO sync", () => {
 
     expect(second.pdfUrl).not.toBe(first.pdfUrl);
     expect(second.progress).toBe(0);
+    expect(second.currentPage).toBe(1);
     expect(second.playing).toBe(false);
     expect(state.pdfUrl).toBe(second.pdfUrl);
     expect(state.progress).toBe(0);
+    expect(state.currentPage).toBe(1);
 
     viewer.close();
   });

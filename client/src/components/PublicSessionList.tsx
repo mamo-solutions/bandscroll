@@ -2,7 +2,6 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, Inbox } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { SessionStatusBadge } from "@/components/SessionStatusBadge";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { SessionState } from "@/types/session";
 
@@ -42,7 +41,6 @@ export function PublicSessionList({ sessions }: { sessions: SessionState[] }) {
             <h3 className="font-heading text-lg font-semibold leading-snug">
               {s.title}
             </h3>
-            <SessionStatusBadge status={s.status} />
           </div>
 
           {s.description && (

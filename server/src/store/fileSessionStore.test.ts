@@ -19,6 +19,10 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
     updatedAt: 1_000,
     connectedClients: 7,
     createdAt: 500,
+    markers: [],
+    locked: false,
+    playbackMode: "page",
+    currentPage: 4,
     ...overrides,
   };
 }
@@ -90,5 +94,21 @@ describe("FileSessionStore", () => {
 
     const restored = new FileSessionStore(dataDir);
     expect([...restored.values()]).toHaveLength(0);
+  });
+
+  it("backfills schema fields missing on older persisted rows", () => {
+    const first = new FileSessionStore(dataDir);
+    const legacy = makeSession();
+    delete (legacy as Partial<SessionState>).markers;
+    delete (legacy as Partial<SessionState>).locked;
+    delete (legacy as Partial<SessionState>).playbackMode;
+    delete (legacy as Partial<SessionState>).currentPage;
+    first.set(legacy.id, legacy as SessionState);
+
+    const restored = new FileSessionStore(dataDir).get(legacy.id)!;
+    expect(restored.markers).toEqual([]);
+    expect(restored.locked).toBe(false);
+    expect(restored.playbackMode).toBe("scroll");
+    expect(restored.currentPage).toBe(1);
   });
 });

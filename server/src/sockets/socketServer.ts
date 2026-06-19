@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import type { RequestHandler } from "express";
 import {
+  clampCurrentPage,
   decrementClientCount,
   getSessionByCode,
   getSessionById,
@@ -152,7 +153,11 @@ export function initSocketServer(
 
     socket.on("admin-stop", (sessionId: string) => {
       if (!guardAdmin("admin-stop")) return;
-      adminUpdate(String(sessionId), { playing: false, progress: 0 });
+      adminUpdate(String(sessionId), {
+        playing: false,
+        progress: 0,
+        currentPage: 1,
+      });
       log.info("admin stop", { id: socket.id, sessionId: String(sessionId) });
     });
 
@@ -167,6 +172,49 @@ export function initSocketServer(
           id: socket.id,
           sessionId: String(payload?.sessionId),
           progress: clampProgress(Number(payload?.progress)),
+        });
+      }
+    );
+
+    socket.on(
+      "admin-set-playback-mode",
+      (payload: {
+        sessionId: string;
+        playbackMode: SessionState["playbackMode"];
+        progress?: number;
+        currentPage?: number;
+      }) => {
+        if (!guardAdmin("admin-set-playback-mode")) return;
+        const patch: Parameters<typeof updateSessionState>[1] = {
+          playbackMode: payload?.playbackMode === "page" ? "page" : "scroll",
+        };
+        if (payload?.progress !== undefined) {
+          patch.progress = clampProgress(Number(payload.progress));
+        }
+        if (payload?.currentPage !== undefined) {
+          patch.currentPage = clampCurrentPage(Number(payload.currentPage));
+        }
+        adminUpdate(String(payload?.sessionId), patch);
+        log.info("admin set-playback-mode", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          playbackMode: patch.playbackMode,
+          currentPage: patch.currentPage,
+          progress: patch.progress,
+        });
+      }
+    );
+
+    socket.on(
+      "admin-set-page",
+      (payload: { sessionId: string; page: number }) => {
+        if (!guardAdmin("admin-set-page")) return;
+        const currentPage = clampCurrentPage(Number(payload?.page));
+        adminUpdate(String(payload?.sessionId), { currentPage });
+        log.info("admin set-page", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          currentPage,
         });
       }
     );

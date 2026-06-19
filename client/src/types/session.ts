@@ -1,4 +1,5 @@
 export type SessionStatus = "draft" | "live" | "ended";
+export type PlaybackMode = "scroll" | "page";
 
 export type SongMarker = {
   id: string;
@@ -21,6 +22,8 @@ export type SessionState = {
   createdAt: number;
   markers: SongMarker[];
   locked: boolean;
+  playbackMode: PlaybackMode;
+  currentPage: number;
 };
 
 /** Compute live progress from the last server snapshot.

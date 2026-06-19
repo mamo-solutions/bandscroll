@@ -1,0 +1,36 @@
+[
+  {
+    "id": "8d2ef623-f553-4f17-8ecf-d72771cfc5ca",
+    "code": "SESSION-6024",
+    "title": "Test #1",
+    "pdfUrl": "/uploads/ee4deef3-ea7e-4317-ad4c-ffbdad8868d9.pdf",
+    "status": "live",
+    "playing": true,
+    "progress": 0.10409536813000783,
+    "speed": 0.00004834227300995025,
+    "updatedAt": 1781860640912,
+    "connectedClients": 0,
+    "createdAt": 1781815735008,
+    "markers": [],
+    "locked": false,
+    "playbackMode": "scroll",
+    "currentPage": 35
+  },
+  {
+    "id": "dbd215f3-97dc-4f00-8c51-73578419ad2f",
+    "code": "SESSION-1648",
+    "title": "test #2",
+    "pdfUrl": "/uploads/4ecfa825-096f-41e8-b3b4-eae6eeff278e.pdf",
+    "status": "live",
+    "playing": true,
+    "progress": 0.3658879373636652,
+    "speed": 0.00005,
+    "updatedAt": 1781862160618,
+    "connectedClients": 1,
+    "createdAt": 1781860671014,
+    "markers": [],
+    "locked": false,
+    "playbackMode": "scroll",
+    "currentPage": 64
+  }
+]

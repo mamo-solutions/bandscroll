@@ -22,6 +22,8 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
     createdAt: 500,
     markers: [{ id: "m1", title: "Verse", page: 2 }],
     locked: false,
+    playbackMode: "page",
+    currentPage: 4,
     ...overrides,
   };
 }
@@ -116,6 +118,8 @@ describe("SqliteSessionStore", () => {
     const legacy = makeSession();
     delete (legacy as Partial<SessionState>).markers;
     delete (legacy as Partial<SessionState>).locked;
+    delete (legacy as Partial<SessionState>).playbackMode;
+    delete (legacy as Partial<SessionState>).currentPage;
     db.prepare(
       `INSERT INTO sessions (id, code, status, created_at, data) VALUES (?, ?, ?, ?, ?)`
     ).run(
@@ -133,6 +137,8 @@ describe("SqliteSessionStore", () => {
 
     expect(restored.markers).toEqual([]);
     expect(restored.locked).toBe(false);
+    expect(restored.playbackMode).toBe("scroll");
+    expect(restored.currentPage).toBe(1);
   });
 
   it("skips a corrupt row without failing the whole load", () => {

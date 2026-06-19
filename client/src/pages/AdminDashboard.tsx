@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { AdminNav } from "@/components/AdminNav";
-import { SessionStatusBadge } from "@/components/SessionStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -196,7 +195,6 @@ export function AdminDashboard() {
                 <h3 className="font-heading text-lg font-semibold leading-snug">
                   {s.title}
                 </h3>
-                <SessionStatusBadge status={s.status} />
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-sm">

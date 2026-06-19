@@ -15,6 +15,7 @@ import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
+import { getPlaybackDisplayProgress } from "@/lib/playback";
 import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/errorLog";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -32,6 +33,7 @@ export function SessionViewer() {
   const [uiProgress, setUiProgress] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [distractionFree, setDistractionFree] = useState(false);
+  const [numPages, setNumPages] = useState(0);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
@@ -70,6 +72,9 @@ export function SessionViewer() {
       if (s.code === code) {
         receivedAtRef.current = Date.now();
         setSession(s);
+        setUiProgress(
+          getPlaybackDisplayProgress(s.playbackMode, s.progress, s.currentPage, numPages)
+        );
         setNotFound(false);
         if (s.status === "ended") setEnded(true);
       }
@@ -91,6 +96,9 @@ export function SessionViewer() {
       .then((s) => {
         receivedAtRef.current = Date.now();
         setSession(s);
+        setUiProgress(
+          getPlaybackDisplayProgress(s.playbackMode, s.progress, s.currentPage, numPages)
+        );
         if (s.status === "ended") setEnded(true);
       })
       .catch(() => setNotFound(true));
@@ -114,7 +122,7 @@ export function SessionViewer() {
       try {
         const s = stateRef.current;
         const viewer = viewerRef.current;
-        if (s && viewer) {
+        if (s && viewer && s.playbackMode === "scroll") {
           const elapsed = Date.now() - receivedAtRef.current;
           const target = effectiveProgressFromElapsed(s, elapsed);
           const current = displayedRef.current;
@@ -136,6 +144,21 @@ export function SessionViewer() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
+
+  useEffect(() => {
+    const currentSession = stateRef.current;
+    const viewer = viewerRef.current;
+    if (!currentSession || !viewer || currentSession.playbackMode !== "page") return;
+    viewer.scrollToPage(currentSession.currentPage);
+    setUiProgress(
+      getPlaybackDisplayProgress(
+        currentSession.playbackMode,
+        currentSession.progress,
+        currentSession.currentPage,
+        numPages
+      )
+    );
+  }, [numPages, session?.currentPage, session?.pdfUrl, session?.playbackMode, session?.progress]);
 
   // ---- Immersive chrome: while playing, auto-hide the bar + footer after a
   // short idle so the score gets the full screen. Any interaction reveals them
@@ -242,7 +265,13 @@ export function SessionViewer() {
       {/* Document area */}
       <div className="relative flex-1 overflow-hidden">
         {pdfUrl ? (
-          <PdfViewer key={pdfUrl} ref={viewerRef} fileUrl={pdfUrl} blockUserScroll />
+          <PdfViewer
+            key={pdfUrl}
+            ref={viewerRef}
+            fileUrl={pdfUrl}
+            blockUserScroll
+            onDocumentLoad={setNumPages}
+          />
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
             {t("viewer.noPdf")}
@@ -251,11 +280,7 @@ export function SessionViewer() {
       </div>
 
       {/* Footer hidden while playing and in distraction-free mode. */}
-      {!distractionFree && !chromeHidden && (
-        <div className="shrink-0 z-20 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-          <Footer />
-        </div>
-      )}
+      {!distractionFree && !chromeHidden && <Footer />}
 
       {/* Distraction-free toggle (also triggers browser fullscreen) */}
       <button

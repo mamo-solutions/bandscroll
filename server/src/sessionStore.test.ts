@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clampProgress,
   createSession,
+  clampCurrentPage,
   decrementClientCount,
   deleteSession,
   endSession,
@@ -38,6 +39,18 @@ describe("clampProgress", () => {
   });
 });
 
+describe("clampCurrentPage", () => {
+  it.each([
+    [1, 1],
+    [2.2, 2],
+    [0, 1],
+    [-5, 1],
+    [NaN, 1],
+  ])("clamps %s -> %s", (input, expected) => {
+    expect(clampCurrentPage(input)).toBe(expected);
+  });
+});
+
 describe("createSession", () => {
   it("applies sensible defaults", () => {
     const s = track(createSession({ title: "My Set" }));
@@ -52,6 +65,8 @@ describe("createSession", () => {
     expect(s.connectedClients).toBe(0);
     expect(s.createdAt).toBeTypeOf("number");
     expect(s.updatedAt).toBe(s.createdAt);
+    expect(s.playbackMode).toBe("scroll");
+    expect(s.currentPage).toBe(1);
   });
 
   it("generates a SESSION-#### code", () => {
@@ -110,6 +125,12 @@ describe("updateSessionState", () => {
     const s = track(createSession({ title: "u" }));
     expect(updateSessionState(s.id, { progress: 2 })?.progress).toBe(1);
     expect(updateSessionState(s.id, { progress: -1 })?.progress).toBe(0);
+  });
+
+  it("clamps currentPage on update", () => {
+    const s = track(createSession({ title: "u" }));
+    expect(updateSessionState(s.id, { currentPage: 2.8 })?.currentPage).toBe(3);
+    expect(updateSessionState(s.id, { currentPage: -1 })?.currentPage).toBe(1);
   });
 
   it("returns undefined for a missing session", () => {

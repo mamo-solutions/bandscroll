@@ -37,6 +37,7 @@ export type PdfViewerHandle = {
   scrollToProgress: (progress: number) => void;
   scrollToPage: (page: number) => void;
   getProgressForPage: (page: number) => number;
+  getCurrentPage: () => number;
   getCurrentProgress: () => number;
   readonly numPages: number;
 };
@@ -107,6 +108,24 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return clamp01(pageEl.offsetTop / maxScroll());
   };
 
+  const getCurrentPage = () => {
+    const el = scrollRef.current;
+    if (!el || numPages <= 1) return 1;
+
+    let nearestPage = 1;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < numPages; index++) {
+      const pageEl = pageRefs.current[index];
+      if (!pageEl) continue;
+      const distance = Math.abs(pageEl.offsetTop - el.scrollTop);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestPage = index + 1;
+      }
+    }
+    return nearestPage;
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -122,6 +141,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         el.scrollTop = pageEl.offsetTop;
       },
       getProgressForPage,
+      getCurrentPage,
       getCurrentProgress() {
         const el = scrollRef.current;
         if (!el) return 0;
@@ -131,7 +151,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return numPages;
       },
     }),
-    []
+    [getProgressForPage, numPages]
   );
 
   // Responsive display width — only drives CSS sizing of already-rasterized
@@ -236,7 +256,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               src={fileUrl}
               alt=""
               style={{ width: displayWidth }}
-              onLoad={() => setLoading(false)}
+              onLoad={() => {
+                setNumPages(1);
+                setLoading(false);
+                onDocumentLoad?.(1);
+              }}
               onError={() => setError("image")}
               className="h-auto rounded-lg shadow-[var(--shadow-lift)]"
             />

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -iA40 \"feature\")",
+      "Bash(grep -niA15 \"roadmap\\\\|todo\\\\|future\\\\|planned\\\\|limitation\" README.md)"
+    ]
+  }
+}

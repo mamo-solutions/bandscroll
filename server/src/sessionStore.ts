@@ -24,6 +24,11 @@ export function clampProgress(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+export function clampCurrentPage(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.round(value));
+}
+
 export type CreateSessionInput = {
   title: string;
   description?: string;
@@ -47,6 +52,8 @@ export function createSession(input: CreateSessionInput): SessionState {
     createdAt: now,
     markers: [],
     locked: false,
+    playbackMode: "scroll",
+    currentPage: 1,
   };
   adapter.set(session.id, session);
   return session;
@@ -87,6 +94,8 @@ export type SessionPatch = Partial<
     | "speed"
     | "markers"
     | "locked"
+    | "playbackMode"
+    | "currentPage"
   >
 >;
 
@@ -97,6 +106,7 @@ export function updateSessionState(
   const session = adapter.get(id);
   if (!session) return undefined;
   if (patch.progress !== undefined) patch.progress = clampProgress(patch.progress);
+  if (patch.currentPage !== undefined) patch.currentPage = clampCurrentPage(patch.currentPage);
   Object.assign(session, patch);
   session.updatedAt = Date.now();
   return adapter.set(session.id, session);

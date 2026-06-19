@@ -1,4 +1,5 @@
 export type SessionStatus = "draft" | "live" | "ended";
+export type PlaybackMode = "scroll" | "page";
 
 export type SongMarker = {
   id: string;
@@ -21,10 +22,12 @@ export type SessionState = {
   createdAt: number;
   markers: SongMarker[];
   locked: boolean;
+  playbackMode: PlaybackMode;
+  currentPage: number;
 };
 
 /** Slim payload broadcast to clients for the live scroll sync. */
 export type SyncState = Pick<
   SessionState,
-  "progress" | "speed" | "playing" | "updatedAt" | "status"
+  "progress" | "speed" | "playing" | "updatedAt" | "status" | "playbackMode" | "currentPage"
 >;

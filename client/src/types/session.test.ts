@@ -21,6 +21,8 @@ function makeState(over: Partial<SessionState> = {}): SessionState {
     createdAt: 0,
     markers: [],
     locked: false,
+    playbackMode: "scroll",
+    currentPage: 1,
     ...over,
   };
 }

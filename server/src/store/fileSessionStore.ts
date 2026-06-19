@@ -31,6 +31,8 @@ export class FileSessionStore implements SessionStoreAdapter {
         // sessions don't crash clients that expect them.
         session.markers ??= [];
         session.locked ??= false;
+        session.playbackMode ??= "scroll";
+        session.currentPage ??= 1;
         // These fields are runtime-only; never restore them across restarts.
         session.connectedClients = 0;
         session.updatedAt = Date.now();

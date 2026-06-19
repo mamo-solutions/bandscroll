@@ -172,6 +172,7 @@ adminRouter.post(
     const updated = updateSessionState(session.id, {
       pdfUrl,
       progress: 0,
+      currentPage: 1,
       playing: false,
     });
     if (updated) {

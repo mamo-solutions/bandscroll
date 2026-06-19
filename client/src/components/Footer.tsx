@@ -23,40 +23,40 @@ export function Footer() {
   const other = LANGUAGES.find((l) => l.code !== lang)!;
 
   return (
-    <footer className="mt-auto border-t border-border/70">
-      <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-3 px-4 py-5 text-sm text-muted-foreground sm:flex-row sm:px-6">
-        <p>
-          <span className="font-heading font-semibold text-foreground">
+    <footer className="mt-auto border-t border-border/50">
+      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:justify-between sm:px-6">
+        <p className="text-center sm:text-left">
+          <span className="font-heading font-semibold text-foreground/90">
             BandScroll
           </span>{" "}
-          — {before}
+          {before}
           <a
             href="https://mamo.solutions"
             target="_blank"
             rel="noreferrer"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            className="font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline"
           >
             mamo.solutions
           </a>
           {after}
-          <span className="ml-2 font-mono text-xs text-muted-foreground">
+          <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
             {APP_VERSION}
           </span>
         </p>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
           <a
             href="https://github.com/mamo-solutions/bandscroll"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <GithubMark />
             GitHub
           </a>
           <Link
             to="/admin"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Mic2 className="size-4" />
             {t("footer.hostSession")}
@@ -64,7 +64,7 @@ export function Footer() {
           <button
             type="button"
             onClick={() => setLang(other.code)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={`Sprache wechseln: ${other.label}`}
           >
             <Languages className="size-4" />

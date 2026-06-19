@@ -1,20 +1,18 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   Crosshair,
-  Gauge,
   Minus,
-  Music,
   Pause,
   Play,
   Plus,
   SkipBack,
   Square,
-  Trash2,
-  Users,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import {
   SPEED_MAX,
@@ -43,7 +41,6 @@ const TAP_MAX_HISTORY = 8;
 
 type Props = {
   session: SessionState;
-  connectedClients: number;
   liveProgress: number;
   numPages: number;
   onPlay: () => void;
@@ -51,11 +48,9 @@ type Props = {
   onStop: () => void;
   onRestart: () => void;
   onSetSpeed: (speed: number) => void;
-  onSeek: (progress: number) => void;
   onSeekToCurrent: () => void;
-  onAddMarker: (title: string, page: number) => void;
-  onDeleteMarker: (id: string) => void;
-  onSeekToMarker: (page: number) => void;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
 };
 
 export type PlaybackControlsHandle = {
@@ -66,7 +61,6 @@ export type PlaybackControlsHandle = {
 export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(function PlaybackControls(
   {
     session,
-    connectedClients,
     liveProgress,
     numPages,
     onPlay,
@@ -74,18 +68,14 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     onStop,
     onRestart,
     onSetSpeed,
-    onSeek,
     onSeekToCurrent,
-    onAddMarker,
-    onDeleteMarker,
-    onSeekToMarker,
+    onPreviousPage,
+    onNextPage,
   }: Props,
   ref
 ) {
   const { t } = useI18n();
   const [pagesPerSong, setPagesPerSong] = useState<string>("2");
-  const [markerTitle, setMarkerTitle] = useState("");
-  const [markerPage, setMarkerPage] = useState("");
   const [beatsPerSong, setBeatsPerSong] = useState<number>(BEATS_PRESETS[1].value);
   const [bpm, setBpm] = useState<number | null>(null);
   const [pulse, setPulse] = useState(false);
@@ -158,7 +148,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     ) {
       const speed = calculateSpeedFromBpm({
         detectedBpm,
-        pagesPerSong: Number(pagesPerSong),
+        pagesPerSong: Number(effectivePagesPerSong),
         beatsPerSong,
         numPages,
       });
@@ -170,146 +160,171 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     }
   }
 
-  const activePreset = SPEED_PRESETS.find(
-    (v) => Math.abs(v - session.speed) < 1e-7
-  );
+  const activePreset = SPEED_PRESETS.find((value) => Math.abs(value - session.speed) < 1e-7);
+  const currentPresetIndex = SPEED_PRESETS.reduce((bestIndex, value, index) => {
+    const bestDistance = Math.abs(SPEED_PRESETS[bestIndex] - session.speed);
+    const distance = Math.abs(value - session.speed);
+    return distance < bestDistance ? index : bestIndex;
+  }, 0);
+  const effectivePagesPerSong = session.playbackMode === "page" ? "1" : pagesPerSong;
+  const currentPage = Math.min(Math.max(session.currentPage, 1), Math.max(numPages, 1));
+  const progressLabel =
+    session.playbackMode === "scroll"
+      ? `${Math.round(liveProgress * 100)}%`
+      : `${currentPage} / ${Math.max(numPages, 1)}`;
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Control bar: info cards + transport in one row on desktop, two rows on small mobile. */}
-      <div className="flex flex-wrap items-stretch gap-2.5 md:flex-nowrap">
-        <Stat
-          icon={<Gauge className="size-4" />}
-          label={t("controls.tempo")}
-          className="min-w-0 flex-1"
-        >
-          {session.speed.toFixed(6)}
-        </Stat>
-        <Stat
-          icon={<Users className="size-4" />}
-          label={t("controls.viewers")}
-          className="min-w-0 flex-1"
-        >
-          {connectedClients}
-        </Stat>
+    <div className="flex flex-col gap-4">
+      <div className="rounded-[1.4rem] border border-border/80 bg-linear-to-br from-card via-card to-secondary/40 p-4 shadow-[var(--shadow-soft)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {t("control.liveDockTitle")}
+              </p>
+              <h2 className="mt-1 font-heading text-xl font-semibold">
+                {t("control.liveDockDesc")}
+              </h2>
+            </div>
 
-        <div className="flex min-w-0 flex-[4] gap-2.5">
+            <div className="flex flex-wrap gap-2">
+              <InlineBadge>
+                {session.playing ? t("conn.playing") : t("conn.paused")}
+              </InlineBadge>
+              <InlineBadge>
+                {t("controls.playbackMode")}:{" "}
+                {session.playbackMode === "scroll"
+                  ? t("controls.scrollMode")
+                  : t("controls.pageMode")}
+              </InlineBadge>
+              <InlineBadge>
+                {t("controls.tempo")}: {session.speed.toFixed(6)}
+              </InlineBadge>
+              <InlineBadge>
+                {t("controls.position")}: {progressLabel}
+              </InlineBadge>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2.5">
           {session.playing ? (
             <Button
               variant="warning"
               onClick={onPause}
-              className="h-full flex-1"
+              className="min-w-[11rem] flex-1 sm:flex-none"
               title={t("controls.pause")}
             >
               <Pause />
-              <span className="hidden lg:inline">{t("controls.pause")}</span>
+              {t("controls.pause")}
             </Button>
           ) : (
             <Button
               variant="success"
               onClick={onPlay}
-              className="h-full flex-1"
+              className="min-w-[11rem] flex-1 sm:flex-none"
               title={t("controls.play")}
             >
               <Play />
-              <span className="hidden lg:inline">{t("controls.play")}</span>
+              {t("controls.play")}
             </Button>
           )}
-          <Button
-            variant="outline"
-            onClick={onStop}
-            className="h-full flex-1"
-            title={t("controls.stop")}
-          >
+          <Button variant="outline" onClick={onStop} title={t("controls.stop")}>
             <Square />
-            <span className="hidden lg:inline">{t("controls.stop")}</span>
+            {t("controls.stop")}
           </Button>
-          <Button
-            variant="outline"
-            onClick={onRestart}
-            className="h-full flex-1"
-            title={t("controls.startOver")}
-          >
+          <Button variant="outline" onClick={onRestart} title={t("controls.startOver")}>
             <SkipBack />
-            <span className="hidden lg:inline">{t("controls.startOver")}</span>
+            {t("controls.startOver")}
           </Button>
-          <Button
-            variant="secondary"
-            onClick={onSeekToCurrent}
-            className="h-full flex-1"
-            title={t("controls.here")}
-          >
+          <Button variant="secondary" onClick={onSeekToCurrent} title={t("controls.here")}>
             <Crosshair />
-            <span className="hidden lg:inline">{t("controls.here")}</span>
+            {t("controls.here")}
           </Button>
         </div>
       </div>
 
-      {/* Seek */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-          <span>{t("controls.position")}</span>
-          <span className="tabular-nums">{(liveProgress * 100).toFixed(0)}%</span>
-        </div>
-        <Slider
-          value={[Math.round(liveProgress * 1000)]}
-          min={0}
-          max={1000}
-          step={1}
-          onValueChange={([v]) => onSeek(v / 1000)}
-          aria-label={t("controls.positionAria")}
-        />
-      </div>
+      {session.playbackMode === "page" && (
+        <section className="rounded-2xl border border-border/80 bg-muted/30 p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between text-sm font-medium">
+              <span className="text-muted-foreground">{t("controls.currentPage")}</span>
+              <span className="font-heading text-lg tabular-nums">
+                {currentPage} / {Math.max(numPages, 1)}
+              </span>
+            </div>
 
-      {/* Speed + tap tempo */}
-      <div className="flex flex-col gap-3 border-t border-border pt-4">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t("controls.speed")}
-          </span>
-          <span className="text-[10px] text-muted-foreground">
-            {t("controls.shortcutsHint")}
-          </span>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                onClick={onPreviousPage}
+                disabled={currentPage <= 1}
+                className="justify-center"
+              >
+                <ChevronLeft />
+                {t("controls.previousPage")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={onNextPage}
+                disabled={numPages > 0 && currentPage >= numPages}
+                className="justify-center"
+              >
+                <ChevronRight />
+                {t("controls.nextPage")}
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="rounded-2xl border border-border/80 bg-card/90 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-heading text-base font-semibold">{t("controls.quickTempo")}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{t("controls.quickTempoHint")}</p>
+          </div>
+          <Badge variant="outline">#{currentPresetIndex + 1}</Badge>
         </div>
 
-        {/* Presets, manual steppers and tap tempo in one row. */}
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="inline-flex rounded-lg bg-muted p-1">
-            {SPEED_PRESETS.map((value, i) => (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-muted p-1">
+            {SPEED_PRESETS.map((value, index) => (
               <button
                 key={value}
+                type="button"
                 onClick={() => applySpeed(value)}
-                aria-label={`${t("controls.speed")} ${i + 1}`}
+                aria-label={`${t("controls.speed")} ${index + 1}`}
                 className={cn(
-                  "w-9 rounded-md py-2 text-sm font-semibold tabular-nums transition-colors",
+                  "w-10 rounded-lg py-2 text-sm font-semibold tabular-nums transition-colors",
                   activePreset === value
                     ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {i + 1}
+                {index + 1}
               </button>
             ))}
           </div>
 
-          <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
+          <div className="inline-flex items-center gap-1 rounded-xl bg-muted p-1">
             <Button
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-9"
               onClick={() => nudge(-SPEED_STEP)}
               disabled={session.speed <= SPEED_MIN}
               aria-label={t("controls.slower")}
             >
               <Minus className="size-4" />
             </Button>
-            <span className="min-w-[4.5rem] text-center text-sm font-semibold tabular-nums">
+            <span className="min-w-[5rem] text-center text-sm font-semibold tabular-nums">
               {session.speed.toFixed(6)}
             </span>
             <Button
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-9"
               onClick={() => nudge(SPEED_STEP)}
               disabled={session.speed >= SPEED_MAX}
               aria-label={t("controls.faster")}
@@ -318,198 +333,99 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
             </Button>
           </div>
 
-          <div className="mx-1 h-8 w-px bg-border" />
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {t("controls.tap")}
-            </label>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleTap}
-              disabled={numPages === 0}
-              className={cn(
-                "h-9 min-w-[4.5rem] transition-transform",
-                pulse && "scale-110 ring-2 ring-primary ring-offset-2 ring-offset-background"
-              )}
-              aria-label={t("controls.tapTempo")}
-            >
-              {bpm ?? "—"} <span className="ml-1 text-xs">{t("controls.bpm")}</span>
-            </Button>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="pagesPerSong"
-              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              {t("controls.pagesPerSong")}
-            </label>
-            <Input
-              id="pagesPerSong"
-              type="number"
-              min={0.1}
-              step={0.1}
-              inputMode="decimal"
-              value={pagesPerSong}
-              onChange={(e) => setPagesPerSong(e.target.value)}
-              disabled={numPages === 0}
-              className="h-9 w-20 px-2"
-            />
-          </div>
-
-          <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
-            {BEATS_PRESETS.map(({ labelKey, value }) => (
-              <button
-                key={value}
-                onClick={() => setBeatsPerSong(value)}
-                disabled={numPages === 0}
-                title={t(labelKey)}
-                className={cn(
-                  "rounded-md px-2.5 py-2 text-xs font-semibold transition-colors",
-                  beatsPerSong === value
-                    ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-
-          {numPages === 0 && (
-            <span className="self-center text-xs text-muted-foreground">
-              {t("controls.tapTempoHint")}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Setlist markers */}
-      <div className="flex flex-col gap-3 border-t border-border pt-4">
-        <span className="text-xs font-medium text-muted-foreground">
-          {t("controls.setlist")}
-        </span>
-
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="markerTitle"
-              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              {t("controls.markerTitle")}
-            </label>
-            <Input
-              id="markerTitle"
-              type="text"
-              value={markerTitle}
-              onChange={(e) => setMarkerTitle(e.target.value)}
-              placeholder={t("controls.markerTitlePlaceholder")}
-              disabled={numPages === 0}
-              className="h-9 w-40 px-2"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="markerPage"
-              className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              {t("controls.markerPage")}
-            </label>
-            <Input
-              id="markerPage"
-              type="number"
-              min={1}
-              max={numPages || 1}
-              inputMode="numeric"
-              value={markerPage}
-              onChange={(e) => setMarkerPage(e.target.value)}
-              placeholder={numPages > 0 ? `1-${numPages}` : "—"}
-              disabled={numPages === 0}
-              className="h-9 w-20 px-2"
-            />
-          </div>
-
           <Button
-            variant="outline"
-            size="sm"
-            disabled={numPages === 0 || !markerTitle.trim() || !markerPage}
-            onClick={() => {
-              onAddMarker(markerTitle, Number(markerPage));
-              setMarkerTitle("");
-              setMarkerPage("");
-            }}
-            className="h-9"
+            variant="secondary"
+            onClick={handleTap}
+            disabled={numPages === 0}
+            className={cn(
+              "min-w-[7rem] transition-transform",
+              pulse && "scale-105 ring-2 ring-primary ring-offset-2 ring-offset-background"
+            )}
+            aria-label={t("controls.tapTempo")}
           >
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">{t("controls.addMarker")}</span>
+            {bpm ?? "—"} <span className="text-xs">{t("controls.bpm")}</span>
           </Button>
         </div>
 
-        {(session.markers ?? []).length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {(session.markers ?? []).map((marker) => (
-              <div
-                key={marker.id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-sm"
-              >
-                <button
-                  onClick={() => onSeekToMarker(marker.page)}
-                  className="flex items-center gap-1.5 font-medium hover:text-primary"
-                  title={t("controls.seekToMarker")}
-                >
-                  <Music className="size-3.5 text-muted-foreground" />
-                  <span className="max-w-[8rem] truncate">{marker.title}</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {t("controls.markerPageShort", { page: marker.page })}
-                  </span>
-                </button>
-                <button
-                  onClick={() => onDeleteMarker(marker.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label={t("controls.deleteMarker")}
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
+        {numPages === 0 && (
+          <p className="mt-3 text-sm text-muted-foreground">{t("controls.tapTempoHint")}</p>
         )}
-      </div>
+      </section>
+
+      <details className="group rounded-2xl border border-border/80 bg-card/80">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5">
+          <div>
+            <h3 className="font-heading text-base font-semibold">{t("controls.advancedTempo")}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{t("controls.manualTempoHint")}</p>
+          </div>
+          <span className="text-xs font-medium text-muted-foreground transition-transform group-open:rotate-180">
+            ▾
+          </span>
+        </summary>
+
+        <div className="border-t border-border/70 px-4 py-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,20rem)]">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex min-w-[9rem] flex-col gap-1">
+                <label
+                  htmlFor="pagesPerSong"
+                  className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                >
+                  {t("controls.pagesPerSong")}
+                </label>
+                <Input
+                  id="pagesPerSong"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  inputMode="decimal"
+                  value={effectivePagesPerSong}
+                  onChange={(e) => setPagesPerSong(e.target.value)}
+                  disabled={numPages === 0 || session.playbackMode === "page"}
+                  className="h-10"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {t("controls.beatsPerSong")}
+                </span>
+                <div className="inline-flex rounded-xl bg-muted p-1">
+                  {BEATS_PRESETS.map(({ labelKey, value }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setBeatsPerSong(value)}
+                      disabled={numPages === 0}
+                      title={t(labelKey)}
+                      className={cn(
+                        "rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
+                        beatsPerSong === value
+                          ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/35 px-3 py-2.5 text-sm text-muted-foreground">
+              {t("controls.shortcutsHint")}
+            </div>
+          </div>
+        </div>
+      </details>
     </div>
   );
 });
 
-function Stat({
-  icon,
-  label,
-  children,
-  tone,
-  className,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  children: React.ReactNode;
-  tone?: "success" | "warning";
-  className?: string;
-}) {
+function InlineBadge({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn("rounded-lg border border-border bg-card px-3 py-2.5", className)}>
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <div
-        className={cn(
-          "mt-0.5 truncate font-heading text-lg font-semibold tabular-nums",
-          tone === "success" && "text-success",
-          tone === "warning" && "text-warning"
-        )}
-      >
-        {children}
-      </div>
-    </div>
+    <span className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1 text-sm font-medium text-foreground">
+      {children}
+    </span>
   );
 }
