@@ -9,6 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "load:test": "tsx scripts/load-test.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
