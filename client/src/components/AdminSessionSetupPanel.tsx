@@ -5,6 +5,8 @@ import {
   FileWarning,
   Music,
   RefreshCw,
+  Square,
+  SunMedium,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,11 @@ import {
   SHORTCUT_OPTIONS,
 } from "@/lib/adminShortcuts";
 import { cn } from "@/lib/utils";
-import type { PlaybackMode, SessionState } from "@/types/session";
+import type {
+  PlaybackMode,
+  SessionBackgroundMode,
+  SessionState,
+} from "@/types/session";
 
 type Props = {
   numPages: number;
@@ -37,6 +43,7 @@ type Props = {
   onOpenFilePicker: () => void;
   onSeekToMarker: (page: number) => void;
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
+  onSetBackgroundMode: (backgroundMode: SessionBackgroundMode) => void;
   onShortcutBindingChange: (slot: AdminShortcutSlot, code: string) => void;
   onShortcutPresetChange: (
     presetId: Exclude<AdminShortcutPresetId, "custom">,
@@ -54,6 +61,7 @@ export function AdminSessionSetupPanel({
   onOpenFilePicker,
   onSeekToMarker,
   onSetPlaybackMode,
+  onSetBackgroundMode,
   onShortcutBindingChange,
   onShortcutPresetChange,
   shortcutBindings,
@@ -171,6 +179,73 @@ export function AdminSessionSetupPanel({
                   {mode === "scroll"
                     ? t("controls.scrollMode")
                     : t("controls.pageMode")}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border/70 bg-muted/35 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-heading text-base font-semibold">
+                  {t("controls.sessionBackground")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("control.backgroundHint")}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {(
+                [
+                  {
+                    mode: "light",
+                    icon: SunMedium,
+                    label: t("controls.backgroundLight"),
+                    swatchClassName:
+                      "border-border/70 bg-linear-to-br from-secondary via-card to-accent/65",
+                  },
+                  {
+                    mode: "black",
+                    icon: Square,
+                    label: t("controls.backgroundBlack"),
+                    swatchClassName: "border-white/15 bg-black",
+                  },
+                ] as const
+              ).map(({ mode, icon: Icon, label, swatchClassName }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onSetBackgroundMode(mode)}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition-colors",
+                    session.backgroundMode === mode
+                      ? "border-primary bg-card shadow-[var(--shadow-soft)]"
+                      : "border-border/70 bg-background/80 hover:border-primary/40 hover:bg-card/80",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">{label}</p>
+                    <span
+                      className={cn(
+                        "inline-flex size-8 items-center justify-center rounded-lg border",
+                        session.backgroundMode === mode
+                          ? "border-primary/20 bg-primary/10 text-primary"
+                          : "border-border/70 bg-muted/70 text-muted-foreground",
+                      )}
+                    >
+                      <Icon className="size-4" />
+                    </span>
+                  </div>
+                  <div
+                    className={cn(
+                      "mt-3 h-16 rounded-lg border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]",
+                      swatchClassName
+                    )}
+                  >
+                    <div className="mx-auto h-full max-w-[4.5rem] rounded-sm bg-white/95 shadow-sm" />
+                  </div>
                 </button>
               ))}
             </div>

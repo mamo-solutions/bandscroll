@@ -288,7 +288,12 @@ export function SessionViewer() {
     (connectionPhase === "syncing" && session !== null);
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-muted/40">
+    <div
+      className={cn(
+        "flex h-dvh flex-col overflow-hidden",
+        session?.backgroundMode === "black" ? "bg-black" : "bg-muted/40"
+      )}
+    >
       {!distractionFree && (
         <header
           className={cn(
@@ -355,6 +360,8 @@ export function SessionViewer() {
               key={pdfUrl}
               ref={viewerRef}
               fileUrl={pdfUrl}
+              backgroundMode={session?.backgroundMode ?? "light"}
+              edgeToEdge={distractionFree}
               visiblePage={pageMode ? session.currentPage : undefined}
               blockUserScroll
               onDocumentLoad={setNumPages}

@@ -1,5 +1,6 @@
 export type SessionStatus = "draft" | "live" | "ended";
 export type PlaybackMode = "scroll" | "page";
+export type SessionBackgroundMode = "light" | "black";
 
 export type SongMarker = {
   id: string;
@@ -23,6 +24,7 @@ export type SessionState = {
   markers: SongMarker[];
   locked: boolean;
   playbackMode: PlaybackMode;
+  backgroundMode: SessionBackgroundMode;
   currentPage: number;
   numPages: number;
   stateVersion: number;

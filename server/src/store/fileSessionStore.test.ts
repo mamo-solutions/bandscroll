@@ -22,6 +22,7 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
     markers: [],
     locked: false,
     playbackMode: "page",
+    backgroundMode: "black",
     currentPage: 4,
     numPages: 12,
     stateVersion: 3,
@@ -104,6 +105,7 @@ describe("FileSessionStore", () => {
     delete (legacy as Partial<SessionState>).markers;
     delete (legacy as Partial<SessionState>).locked;
     delete (legacy as Partial<SessionState>).playbackMode;
+    delete (legacy as Partial<SessionState>).backgroundMode;
     delete (legacy as Partial<SessionState>).currentPage;
     delete (legacy as Partial<SessionState>).numPages;
     delete (legacy as Partial<SessionState>).stateVersion;
@@ -113,6 +115,7 @@ describe("FileSessionStore", () => {
     expect(restored.markers).toEqual([]);
     expect(restored.locked).toBe(false);
     expect(restored.playbackMode).toBe("scroll");
+    expect(restored.backgroundMode).toBe("light");
     expect(restored.currentPage).toBe(1);
     expect(restored.numPages).toBe(0);
     expect(restored.stateVersion).toBe(0);

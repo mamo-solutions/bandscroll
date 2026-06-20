@@ -126,6 +126,7 @@ describe("REST API", () => {
     expect(body.code).toMatch(/^SESSION-/);
     expect(body.status).toBe("draft");
     expect(body.playbackMode).toBe("scroll");
+    expect(body.backgroundMode).toBe("light");
     expect(body.currentPage).toBe(1);
     expect(body.numPages).toBe(0);
 
@@ -289,6 +290,29 @@ describe("Socket.IO sync", () => {
     admin.emit("admin-set-page", { sessionId: body.id, page: 3 });
     const jumped = await waitForState(viewer, (s) => s.currentPage === 3);
     expect(jumped.playbackMode).toBe("page");
+
+    viewer.close();
+    admin.close();
+  });
+
+  it("broadcasts background-mode changes to viewers", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Dark stage");
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+
+    const admin = await connect({ Cookie: cookie });
+    admin.emit("admin-join-session", body.id);
+    await sleep(150);
+    admin.emit("admin-set-background-mode", {
+      sessionId: body.id,
+      backgroundMode: "black",
+    });
+
+    const updated = await waitForState(viewer, (s) => s.backgroundMode === "black");
+    expect(updated.backgroundMode).toBe("black");
 
     viewer.close();
     admin.close();

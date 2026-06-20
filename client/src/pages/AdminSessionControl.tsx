@@ -41,7 +41,13 @@ import { useWakeLock } from "@/lib/useWakeLock";
 import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
-import { clamp01, type PlaybackMode, type SessionState, type SongMarker } from "@/types/session";
+import {
+  clamp01,
+  type PlaybackMode,
+  type SessionBackgroundMode,
+  type SessionState,
+  type SongMarker,
+} from "@/types/session";
 
 export function AdminSessionControl() {
   const { id = "" } = useParams();
@@ -440,6 +446,13 @@ export function AdminSessionControl() {
     viewer.scrollToProgress(progress);
   }
 
+  function setBackgroundMode(backgroundMode: SessionBackgroundMode) {
+    const currentSession = stateRef.current;
+    if (!currentSession || currentSession.backgroundMode === backgroundMode) return;
+    patchSession({ backgroundMode });
+    socket.emit("admin-set-background-mode", { sessionId: id, backgroundMode });
+  }
+
   function setMarkers(markers: SongMarker[]) {
     socket.emit("admin-set-markers", { sessionId: id, markers });
   }
@@ -602,6 +615,8 @@ export function AdminSessionControl() {
                   key={session.pdfUrl}
                   ref={viewerRef}
                   fileUrl={session.pdfUrl}
+                  backgroundMode={session.backgroundMode}
+                  edgeToEdge={distractionFree}
                   visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
                   onUserScroll={(progress) => {
                     if (stateRef.current?.playing) return;
@@ -678,6 +693,7 @@ export function AdminSessionControl() {
               onOpenFilePicker={() => pdfInput.current?.click()}
               onSeekToMarker={seekToMarker}
               onSetPlaybackMode={setPlaybackMode}
+              onSetBackgroundMode={setBackgroundMode}
               onShortcutBindingChange={handleShortcutBindingChange}
               onShortcutPresetChange={handleShortcutPresetChange}
               shortcutBindings={shortcutBindings}

@@ -247,6 +247,23 @@ export function initSocketServer(
     );
 
     socket.on(
+      "admin-set-background-mode",
+      (payload: {
+        sessionId: string;
+        backgroundMode: SessionState["backgroundMode"];
+      }) => {
+        if (!guardAdmin("admin-set-background-mode")) return;
+        const backgroundMode = payload?.backgroundMode === "black" ? "black" : "light";
+        adminUpdate(String(payload?.sessionId), { backgroundMode });
+        log.info("admin set-background-mode", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          backgroundMode,
+        });
+      }
+    );
+
+    socket.on(
       "admin-set-page",
       (payload: { sessionId: string; page: number }) => {
         if (!guardAdmin("admin-set-page")) return;

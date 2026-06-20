@@ -1,4 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { readFile } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 import process from "node:process";
 import { io, type Socket } from "socket.io-client";
 
@@ -13,6 +15,7 @@ type Config = {
   mode: PlaybackMode;
   pageCount: number;
   pageFlipIntervalMs: number;
+  pdfPath: string | null;
   rampMs: number;
   speed: number;
   startPlaying: boolean;
@@ -67,13 +70,18 @@ function parseArgs(argv: string[]): Map<string, string> {
         ? inlineValue ?? "true"
         : nextValue;
 
-    entries.set(rawKey, value);
+    const key = normalizeArgKey(rawKey);
+    entries.set(key, value);
     if (inlineValue === undefined && nextValue !== undefined && !nextValue.startsWith("--")) {
       index += 1;
     }
   }
 
   return entries;
+}
+
+function normalizeArgKey(key: string): string {
+  return key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
 }
 
 function readNumber(
@@ -155,6 +163,7 @@ function readConfig(): Config {
     mode: readMode(args),
     pageCount: readNumber(args, "page-count", 20),
     pageFlipIntervalMs: readNumber(args, "page-flip-interval-ms", 1_000),
+    pdfPath: readOptionalPdfPath(args),
     rampMs: readNumber(args, "ramp-ms", 10_000),
     speed: readNumber(args, "speed", 0.0002),
     startPlaying: readBoolean(args, "start-playing", true),
@@ -177,11 +186,18 @@ Options:
   --mode scroll|page
   --page-count 20
   --page-flip-interval-ms 1000
+  --pdf-path /absolute/or/relative/file.pdf
   --speed 0.0002
   --metrics-interval-ms 5000
   --start-playing true|false
   --transports websocket|websocket,polling
 `);
+}
+
+function readOptionalPdfPath(args: Map<string, string>): string | null {
+  const rawValue = args.get("pdf-path") ?? process.env.PDF_PATH ?? process.env.LOAD_TEST_PDF_PATH;
+  if (!rawValue) return null;
+  return resolve(rawValue);
 }
 
 async function fetchJson<T>(
@@ -231,6 +247,32 @@ async function createSession(baseUrl: string, cookie: string): Promise<AdminSess
     },
     201
   );
+}
+
+async function uploadPdf(
+  baseUrl: string,
+  cookie: string,
+  sessionId: string,
+  pdfPath: string
+): Promise<void> {
+  const fileBuffer = await readFile(pdfPath);
+  const form = new FormData();
+  form.append(
+    "pdf",
+    new Blob([fileBuffer], { type: "application/pdf" }),
+    basename(pdfPath)
+  );
+
+  const response = await fetch(`${baseUrl}/api/admin/sessions/${sessionId}/pdf`, {
+    method: "POST",
+    headers: { Cookie: cookie },
+    body: form,
+  });
+
+  if (response.status !== 200) {
+    const body = await response.text();
+    throw new Error(`PDF upload failed with status ${response.status}: ${body}`);
+  }
 }
 
 async function fetchMetrics(baseUrl: string, cookie: string): Promise<MetricsSnapshot> {
@@ -358,8 +400,15 @@ function formatMetrics(snapshot: MetricsSnapshot | null): string {
 
 async function main(): Promise<void> {
   const config = readConfig();
+  console.log(
+    `Using target ${config.baseUrl} with mode=${config.mode} clients=${config.clients}`
+  );
   const cookie = await login(config.baseUrl, config.adminPassword);
   const session = await createSession(config.baseUrl, cookie);
+  if (config.pdfPath) {
+    console.log(`Uploading PDF: ${config.pdfPath}`);
+    await uploadPdf(config.baseUrl, cookie, session.id, config.pdfPath);
+  }
   const adminSocket = await connectAdminSocket(config.baseUrl, cookie);
   const viewerStats: ViewerStats = {
     connected: 0,

@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
+import type { SessionBackgroundMode } from "@/types/session";
 
 // Errors-only verbosity: silences harmless "TT: undefined function" font
 // warnings from PDF.js. Module-level constant so react-pdf doesn't reload.
@@ -44,6 +45,8 @@ export type PdfViewerHandle = {
 
 type Props = {
   fileUrl: string;
+  backgroundMode?: SessionBackgroundMode;
+  edgeToEdge?: boolean;
   /** When set, render only this page instead of the full scrollable document. */
   visiblePage?: number;
   /** Called (already DOM-throttled by rAF) when the user scrolls manually. */
@@ -56,7 +59,15 @@ type Props = {
 };
 
 export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
-  { fileUrl, visiblePage, onUserScroll, onDocumentLoad, blockUserScroll },
+  {
+    fileUrl,
+    backgroundMode = "light",
+    edgeToEdge = false,
+    visiblePage,
+    onUserScroll,
+    onDocumentLoad,
+    blockUserScroll,
+  },
   ref
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -101,7 +112,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const reservedHeight = aspect ? Math.max(1, Math.round(displayWidth * aspect)) : undefined;
   const singlePageWidth =
     singlePageMode && aspect && containerHeight > 0
-      ? Math.max(280, Math.min(displayWidth, Math.floor((containerHeight - 24) / aspect)))
+      ? Math.max(
+          280,
+          Math.min(displayWidth, Math.floor((containerHeight - (edgeToEdge ? 0 : 24)) / aspect))
+        )
       : displayWidth;
 
   const maxScroll = () => {
@@ -182,7 +196,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const el = scrollRef.current;
     if (!el) return;
     const measure = () => {
-      const w = Math.min(RENDER_WIDTH, el.clientWidth - 24);
+      const inset = edgeToEdge ? 0 : 24;
+      const w = Math.min(RENDER_WIDTH, el.clientWidth - inset);
       setDisplayWidth(Math.max(280, w));
       setContainerHeight(el.clientHeight);
     };
@@ -190,7 +205,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [edgeToEdge]);
 
   // Compute which pages should be mounted based on the current scroll position.
   const updateRange = useCallback(() => {
@@ -264,7 +279,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   return (
     <div
       className={cn(
-        "relative h-full bg-muted/40",
+        "relative h-full",
+        backgroundMode === "black" ? "bg-black" : "bg-muted/40",
         blockUserScroll
           ? "overflow-hidden overscroll-none touch-none"
           : "scrollbar-warm overflow-y-auto"
@@ -277,16 +293,31 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       ) : isImage ? (
         <div
           className={cn(
-            "flex flex-col items-center px-2 pt-3 sm:px-4",
-            singlePageMode ? "h-full justify-center pb-3" : "pb-[55vh]"
+            "flex flex-col items-center",
+            edgeToEdge ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
+            singlePageMode
+              ? cn("h-full justify-center", edgeToEdge ? "pb-0" : "pb-3")
+              : edgeToEdge
+                ? "pb-0"
+                : "pb-[55vh]"
           )}
         >
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-muted/40">
+            <div
+              className={cn(
+                "absolute inset-0 flex items-center justify-center",
+                backgroundMode === "black" ? "bg-black" : "bg-muted/40"
+              )}
+            >
               {spinner}
             </div>
           )}
-          <div ref={(el) => { pageRefs.current[0] = el; }}>
+          <div
+            ref={(el) => {
+              pageRefs.current[0] = el;
+            }}
+            className={cn(backgroundMode === "black" && "rounded-lg bg-black")}
+          >
             <img
               src={fileUrl}
               alt=""
@@ -297,7 +328,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                 onDocumentLoad?.(1);
               }}
               onError={() => setError("image")}
-              className="h-auto rounded-lg shadow-[var(--shadow-lift)]"
+              className={cn(
+                "h-auto",
+                edgeToEdge ? "rounded-none shadow-none" : "rounded-lg shadow-[var(--shadow-lift)]"
+              )}
             />
           </div>
         </div>
@@ -319,10 +353,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         >
           <div
             className={cn(
-              "px-2 pt-3 sm:px-4",
+              edgeToEdge ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
               singlePageMode
-                ? "flex h-full items-center justify-center pb-3"
-                : "flex flex-col items-center gap-3 pb-[55vh]"
+                ? cn("flex h-full items-center justify-center", edgeToEdge ? "pb-0" : "pb-3")
+                : cn("flex flex-col items-center", edgeToEdge ? "gap-0 pb-0" : "gap-3 pb-[55vh]")
             )}
           >
             {Array.from({ length: numPages }, (_, i) => {
@@ -331,8 +365,14 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               return (
                 <div
                   key={i}
-                  ref={(el) => { pageRefs.current[i] = el; }}
-                  className="pdf-page-fit overflow-hidden rounded-lg bg-card shadow-[var(--shadow-lift)]"
+                  ref={(el) => {
+                    pageRefs.current[i] = el;
+                  }}
+                  className={cn(
+                    "pdf-page-fit overflow-hidden",
+                    edgeToEdge ? "rounded-none shadow-none" : "rounded-lg shadow-[var(--shadow-lift)]",
+                    backgroundMode === "black" ? "bg-black" : "bg-card"
+                  )}
                   style={{
                     width: singlePageMode ? singlePageWidth : displayWidth,
                     height: singlePageMode ? undefined : reservedHeight,
