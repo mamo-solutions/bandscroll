@@ -24,10 +24,6 @@ export type SessionState = {
   locked: boolean;
   playbackMode: PlaybackMode;
   currentPage: number;
+  numPages: number;
+  stateVersion: number;
 };
-
-/** Slim payload broadcast to clients for the live scroll sync. */
-export type SyncState = Pick<
-  SessionState,
-  "progress" | "speed" | "playing" | "updatedAt" | "status" | "playbackMode" | "currentPage"
->;

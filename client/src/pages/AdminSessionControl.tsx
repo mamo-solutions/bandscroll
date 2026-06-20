@@ -33,7 +33,6 @@ import {
 import { reportError } from "@/lib/errorLog";
 import {
   clampPage,
-  getPageDwellMs,
   getPlaybackDisplayProgress,
   progressToNearestPage,
 } from "@/lib/playback";
@@ -41,7 +40,7 @@ import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
-import { getSocket } from "@/sockets/socket";
+import { getSocket, useSocketStatus } from "@/sockets/socket";
 import { clamp01, type PlaybackMode, type SessionState, type SongMarker } from "@/types/session";
 
 export function AdminSessionControl() {
@@ -49,7 +48,6 @@ export function AdminSessionControl() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const [session, setSession] = useState<SessionState | null>(null);
-  const [connected, setConnected] = useState(false);
   const [uiProgress, setUiProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [numPages, setNumPages] = useState(0);
@@ -63,14 +61,15 @@ export function AdminSessionControl() {
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
   const numPagesRef = useRef(0);
+  const reportedNumPagesRef = useRef<number | null>(null);
   const lastWallRef = useRef<number>(Date.now());
-  const lastPageAdvanceRef = useRef<number>(Date.now());
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SPEED_STEP = 0.000005;
   const KB_SPEED_MIN = 0.00001;
   const KB_SPEED_MAX = 0.002;
   const socket = getSocket();
+  const socketStatus = useSocketStatus();
 
   useDocumentTitle(session ? session.title : t("control.loading"));
   useWakeLock(true);
@@ -131,7 +130,6 @@ export function AdminSessionControl() {
   useEffect(() => {
     api.adminSession(id).then((loaded) => {
       lastWallRef.current = Date.now();
-      lastPageAdvanceRef.current = Date.now();
       stateRef.current = loaded;
       setSession(loaded);
       liveProgressRef.current = loaded.progress;
@@ -145,16 +143,12 @@ export function AdminSessionControl() {
       );
     });
 
-    const onConnect = () => {
-      setConnected(true);
-      socket.emit("admin-join-session", id);
-    };
-    const onDisconnect = () => setConnected(false);
     const onState = (nextSession: SessionState) => {
       if (nextSession.id !== id) return;
       stateRef.current = nextSession;
       setSession(nextSession);
       if (nextSession.playbackMode === "scroll") {
+        liveProgressRef.current = nextSession.progress;
         syncUiProgress(nextSession);
       } else {
         setUiProgress(
@@ -168,24 +162,24 @@ export function AdminSessionControl() {
       }
       if (!nextSession.playing) {
         lastWallRef.current = Date.now();
-        lastPageAdvanceRef.current = Date.now();
       }
     };
     const onError = (e: { error: string }) => reportError("admin.socket", e?.error);
 
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
     socket.on("session-state", onState);
     socket.on("admin-error", onError);
-    if (socket.connected) onConnect();
 
     return () => {
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
       socket.off("session-state", onState);
       socket.off("admin-error", onError);
     };
   }, [id, socket, syncUiProgress]);
+
+  useEffect(() => {
+    if (socketStatus.state === "connected") {
+      socket.emit("admin-join-session", id);
+    }
+  }, [id, socket, socketStatus.state]);
 
   const { setNode, setHidden } = useHeaderSlot();
   useEffect(() => {
@@ -251,56 +245,17 @@ export function AdminSessionControl() {
   }, [advance, syncUiProgress]);
 
   useEffect(() => {
-    if (!session?.playing || session.playbackMode !== "scroll") return;
-    const interval = setInterval(() => {
-      const currentSession = stateRef.current;
-      if (!currentSession) return;
-      advance();
-      socket.emit("admin-sync", {
-        sessionId: id,
-        progress: liveProgressRef.current,
-        playing: true,
-      });
-    }, 250);
-    return () => clearInterval(interval);
-  }, [advance, id, session?.playbackMode, session?.playing, socket]);
-
-  useEffect(() => {
-    if (!session?.playing || session.playbackMode !== "page") return;
-    lastPageAdvanceRef.current = Date.now();
-
-    const interval = setInterval(() => {
-      const currentSession = stateRef.current;
-      if (!currentSession || currentSession.playbackMode !== "page" || !currentSession.playing) {
-        return;
-      }
-
-      const dwellMs = getPageDwellMs(currentSession.speed, numPages);
-      if (dwellMs === null) return;
-
-      const now = Date.now();
-      const elapsed = now - lastPageAdvanceRef.current;
-      const steps = Math.floor(elapsed / dwellMs);
-      if (steps <= 0) return;
-
-      lastPageAdvanceRef.current += steps * dwellMs;
-      const nextPage = clampPage(currentSession.currentPage + steps, Math.max(numPages, 1));
-      goToPage(nextPage);
-
-      if (numPages > 0 && nextPage >= numPages) {
-        patchSession({ playing: false });
-        socket.emit("admin-pause", id);
-        lastPageAdvanceRef.current = now;
-      }
-    }, 200);
-
-    return () => clearInterval(interval);
-  }, [id, numPages, patchSession, session?.playbackMode, session?.playing, socket]);
-
-  useEffect(() => {
     if (session?.playbackMode !== "page") return;
     setUiProgress(getPlaybackDisplayProgress("page", session.progress, session.currentPage, numPages));
   }, [numPages, session?.currentPage, session?.playbackMode, session?.progress]);
+
+  useEffect(() => {
+    if (!session?.pdfUrl || numPages <= 0) return;
+    if (reportedNumPagesRef.current === numPages && session.numPages === numPages) return;
+    reportedNumPagesRef.current = numPages;
+    patchSession({ numPages });
+    socket.emit("admin-set-num-pages", { sessionId: id, numPages });
+  }, [id, numPages, patchSession, session?.numPages, session?.pdfUrl, socket]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -356,7 +311,6 @@ export function AdminSessionControl() {
       socket.emit("admin-seek", { sessionId: id, progress: liveProgressRef.current });
     } else {
       socket.emit("admin-set-page", { sessionId: id, page: currentSession.currentPage });
-      lastPageAdvanceRef.current = Date.now();
     }
 
     patchSession({ playing: true, status: "live" });
@@ -381,7 +335,6 @@ export function AdminSessionControl() {
     socket.emit("admin-stop", id);
     liveProgressRef.current = 0;
     lastWallRef.current = Date.now();
-    lastPageAdvanceRef.current = Date.now();
     patchSession({ playing: false, progress: 0, currentPage: 1 });
     viewerRef.current?.scrollToPage(1);
     setUiProgress(
@@ -398,7 +351,6 @@ export function AdminSessionControl() {
       return;
     }
 
-    lastPageAdvanceRef.current = Date.now();
     goToPage(1);
   }
 
@@ -548,7 +500,6 @@ export function AdminSessionControl() {
       const updated = await api.uploadPdf(id, file);
       liveProgressRef.current = 0;
       lastWallRef.current = Date.now();
-      lastPageAdvanceRef.current = Date.now();
       stateRef.current = updated;
       setSession(updated);
       setUiProgress(
@@ -598,7 +549,9 @@ export function AdminSessionControl() {
         onChange={changePdf}
       />
 
-      {!distractionFree && !connected && (
+      {!distractionFree &&
+        socketStatus.state !== "connected" &&
+        socketStatus.hasEverConnected && (
         <div
           role="alert"
           className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm font-medium text-warning"

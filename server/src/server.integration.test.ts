@@ -127,6 +127,7 @@ describe("REST API", () => {
     expect(body.status).toBe("draft");
     expect(body.playbackMode).toBe("scroll");
     expect(body.currentPage).toBe(1);
+    expect(body.numPages).toBe(0);
 
     // Newly created (draft) session is immediately public.
     const pub = await json(await fetch(`${base}/api/sessions/public`));
@@ -152,7 +153,9 @@ describe("REST API", () => {
     expect(res.status).toBe(200);
     const snap = await json(res);
     expect(snap.memory.rssMb).toBeGreaterThan(0);
-    expect(typeof snap.socket.adminSyncEvents).toBe("number");
+    expect(typeof snap.socket.requestSessionStateEvents).toBe("number");
+    expect(typeof snap.socket.sessionStateBroadcasts).toBe("number");
+    expect(typeof snap.playback.activeLiveSessions).toBe("number");
     expect(typeof snap.totalSessions).toBe("number");
     // The request logger's finish handler feeds the registry, so requests counted.
     expect(snap.http.totalRequests).toBeGreaterThan(0);
@@ -203,6 +206,7 @@ describe("Socket.IO sync", () => {
     viewer.emit("join-session", body.code);
     const state = await once<any>(viewer, "session-state");
     expect(state.code).toBe(body.code);
+    expect(typeof state.stateVersion).toBe("number");
     viewer.close();
   });
 
@@ -301,26 +305,32 @@ describe("Socket.IO sync", () => {
     listener.close();
   });
 
-  it("counts admin-sync events into the metrics endpoint without per-event logging", async () => {
+  it("counts request-session-state and authoritative broadcasts", async () => {
     const cookie = await login();
-    const { body } = await createSession(cookie, "SyncMetrics");
+    const { body } = await createSession(cookie, "ViewerMetrics");
 
-    const before = (
-      await json(await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } }))
-    ).socket.adminSyncEvents;
+    const before = await json(
+      await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } })
+    );
 
-    const admin = await connect({ Cookie: cookie });
-    admin.emit("admin-join-session", body.id);
-    await sleep(100);
-    for (let i = 0; i < 5; i++) admin.emit("admin-sync", { sessionId: body.id, progress: i / 10 });
-    await sleep(200);
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+    viewer.emit("request-session-state", body.code);
+    await once(viewer, "session-state");
 
-    const after = (
-      await json(await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } }))
-    ).socket.adminSyncEvents;
+    const after = await json(
+      await fetch(`${base}/api/admin/metrics`, { headers: { Cookie: cookie } })
+    );
 
-    expect(after).toBeGreaterThanOrEqual(before + 5);
-    admin.close();
+    expect(after.socket.requestSessionStateEvents).toBeGreaterThanOrEqual(
+      before.socket.requestSessionStateEvents + 1
+    );
+    expect(after.socket.sessionStateBroadcasts).toBeGreaterThanOrEqual(
+      before.socket.sessionStateBroadcasts + 2
+    );
+
+    viewer.close();
   });
 
   it("rejects page-mode admin events from an unauthenticated socket", async () => {
@@ -393,10 +403,12 @@ describe("Socket.IO sync", () => {
     expect(second.pdfUrl).not.toBe(first.pdfUrl);
     expect(second.progress).toBe(0);
     expect(second.currentPage).toBe(1);
+    expect(second.numPages).toBe(0);
     expect(second.playing).toBe(false);
     expect(state.pdfUrl).toBe(second.pdfUrl);
     expect(state.progress).toBe(0);
     expect(state.currentPage).toBe(1);
+    expect(state.numPages).toBe(0);
 
     viewer.close();
   });

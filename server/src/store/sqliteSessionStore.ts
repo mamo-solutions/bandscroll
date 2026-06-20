@@ -65,6 +65,8 @@ export class SqliteSessionStore implements SessionStoreAdapter {
         session.locked ??= false;
         session.playbackMode ??= "scroll";
         session.currentPage ??= 1;
+        session.numPages ??= 0;
+        session.stateVersion ??= 0;
         // These fields are runtime-only; never restore them across restarts.
         session.connectedClients = 0;
         session.updatedAt = Date.now();

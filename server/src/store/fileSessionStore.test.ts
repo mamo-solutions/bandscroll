@@ -23,6 +23,8 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
     locked: false,
     playbackMode: "page",
     currentPage: 4,
+    numPages: 12,
+    stateVersion: 3,
     ...overrides,
   };
 }
@@ -103,6 +105,8 @@ describe("FileSessionStore", () => {
     delete (legacy as Partial<SessionState>).locked;
     delete (legacy as Partial<SessionState>).playbackMode;
     delete (legacy as Partial<SessionState>).currentPage;
+    delete (legacy as Partial<SessionState>).numPages;
+    delete (legacy as Partial<SessionState>).stateVersion;
     first.set(legacy.id, legacy as SessionState);
 
     const restored = new FileSessionStore(dataDir).get(legacy.id)!;
@@ -110,5 +114,7 @@ describe("FileSessionStore", () => {
     expect(restored.locked).toBe(false);
     expect(restored.playbackMode).toBe("scroll");
     expect(restored.currentPage).toBe(1);
+    expect(restored.numPages).toBe(0);
+    expect(restored.stateVersion).toBe(0);
   });
 });

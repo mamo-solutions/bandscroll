@@ -7,19 +7,34 @@ import {
   getSessionByCode,
   getSessionById,
   incrementClientCount,
+  listAdminSessions,
   updateSessionState,
   clampProgress,
 } from "../sessionStore.js";
 import type { SessionState } from "../types.js";
 import { logger } from "../lib/logger.js";
 import { metrics } from "../lib/metrics.js";
+import {
+  nextPlaybackPatch,
+  pageStartProgress,
+} from "../lib/sessionPlayback.js";
 
 const log = logger.child("socket");
 
 let io: Server | null = null;
+let playbackTimer: NodeJS.Timeout | null = null;
+const PLAYBACK_LOOP_MS = 250;
+const PLAYBACK_SCROLL_TICK_MS = 250;
+const PLAYBACK_PAGE_TICK_MS = 500;
+const lastPlaybackTickAt = new Map<string, number>();
 
 function roomFor(code: string): string {
   return `session:${code}`;
+}
+
+function emitSessionState(socket: Socket, session: SessionState): void {
+  metrics.recordSessionStateBroadcast();
+  socket.emit("session-state", session);
 }
 
 /** True if this socket's shared express-session is an authenticated admin. */
@@ -39,6 +54,32 @@ export function initSocketServer(
 
   // Share the express-session middleware so socket.request.session is populated.
   io.engine.use(sessionMiddleware);
+
+  if (!playbackTimer) {
+    playbackTimer = setInterval(() => {
+      const now = Date.now();
+      for (const session of listAdminSessions()) {
+        const cadenceMs =
+          session.playbackMode === "page" ? PLAYBACK_PAGE_TICK_MS : PLAYBACK_SCROLL_TICK_MS;
+        const lastTickAt = lastPlaybackTickAt.get(session.id) ?? 0;
+        if (now - lastTickAt < cadenceMs) continue;
+        lastPlaybackTickAt.set(session.id, now);
+
+        const patch = nextPlaybackPatch(session, now);
+        if (!patch) continue;
+        const updated = updateSessionState(session.id, patch);
+        if (updated) broadcastSessionState(updated);
+      }
+    }, PLAYBACK_LOOP_MS);
+    playbackTimer.unref();
+    httpServer.on("close", () => {
+      if (playbackTimer) {
+        clearInterval(playbackTimer);
+        playbackTimer = null;
+      }
+      lastPlaybackTickAt.clear();
+    });
+  }
 
   io.on("connection", (socket) => {
     log.info("connect", { id: socket.id, total: metrics.incSocket() });
@@ -84,7 +125,7 @@ export function initSocketServer(
       joinedSessionId = session.id;
       counted = true;
       incrementClientCount(session.id);
-      socket.emit("session-state", session);
+      emitSessionState(socket, session);
       emitClientCount(session);
       broadcastSessionState(session);
       log.info("room join", {
@@ -105,7 +146,7 @@ export function initSocketServer(
         (joinedSessionId ? getSessionById(joinedSessionId) : undefined) ??
         getSessionByCode(String(codeOrId ?? "")) ??
         getSessionById(String(codeOrId ?? ""));
-      if (session) socket.emit("session-state", session);
+      if (session) emitSessionState(socket, session);
       else socket.emit("session-not-found", { code: codeOrId });
     });
 
@@ -135,7 +176,7 @@ export function initSocketServer(
         return;
       }
       socket.join(roomFor(session.code));
-      socket.emit("session-state", session);
+      emitSessionState(socket, session);
       log.info("admin join", { id: socket.id, code: session.code });
     });
 
@@ -210,11 +251,18 @@ export function initSocketServer(
       (payload: { sessionId: string; page: number }) => {
         if (!guardAdmin("admin-set-page")) return;
         const currentPage = clampCurrentPage(Number(payload?.page));
-        adminUpdate(String(payload?.sessionId), { currentPage });
+        const session = getSessionById(String(payload?.sessionId));
+        if (!session) return;
+        const progress =
+          session.numPages > 0
+            ? pageStartProgress(currentPage, session.numPages)
+            : session.progress;
+        adminUpdate(String(payload?.sessionId), { currentPage, progress });
         log.info("admin set-page", {
           id: socket.id,
           sessionId: String(payload?.sessionId),
           currentPage,
+          progress,
         });
       }
     );
@@ -247,18 +295,29 @@ export function initSocketServer(
       }
     );
 
-    // Lightweight periodic sync sent ~every 250ms while playing. Logged at debug
-    // only (dropped at the default level) — throughput is surfaced via the
-    // adminSyncEvents counter in the metrics summary instead.
     socket.on(
-      "admin-sync",
-      (payload: { sessionId: string; progress: number; playing?: boolean }) => {
-        if (!guardAdmin("admin-sync")) return;
+      "admin-set-num-pages",
+      (payload: { sessionId: string; numPages: number }) => {
+        if (!guardAdmin("admin-set-num-pages")) return;
+        const numPages = Math.max(0, Math.round(Number(payload?.numPages) || 0));
+        const current = getSessionById(String(payload?.sessionId));
+        if (!current) return;
+        const currentPage =
+          numPages > 0 ? Math.min(current.currentPage, numPages) : current.currentPage;
+        const progress =
+          current.playbackMode === "page" && numPages > 0
+            ? Math.min(current.progress, Math.max(0, (currentPage - 1) / numPages))
+            : current.progress;
         adminUpdate(String(payload?.sessionId), {
-          progress: clampProgress(Number(payload?.progress)),
-          ...(payload?.playing !== undefined ? { playing: payload.playing } : {}),
+          numPages,
+          currentPage,
+          progress,
         });
-        log.debug("admin sync", { id: socket.id, sessionId: String(payload?.sessionId) });
+        log.info("admin set-num-pages", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          numPages,
+        });
       }
     );
 
@@ -277,6 +336,7 @@ export function getIo(): Server {
 }
 
 export function broadcastSessionState(session: SessionState): void {
+  metrics.recordSessionStateBroadcast();
   io?.to(roomFor(session.code)).emit("session-state", session);
 }
 

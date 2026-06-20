@@ -173,6 +173,7 @@ adminRouter.post(
       pdfUrl,
       progress: 0,
       currentPage: 1,
+      numPages: 0,
       playing: false,
     });
     if (updated) {

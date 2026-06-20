@@ -31,6 +31,7 @@ export const de = {
 
   "conn.connected": "Verbunden",
   "conn.disconnected": "Getrennt",
+  "conn.syncing": "Synchronisiert",
   "conn.playing": "Läuft",
   "conn.paused": "Pausiert",
 
@@ -43,6 +44,7 @@ export const de = {
   "viewer.fileError": "Datei konnte nicht geladen werden.",
   "viewer.endedBanner": "Diese Session wurde vom Host beendet.",
   "viewer.reconnecting": "Verbindung verloren – versuche neu zu verbinden…",
+  "viewer.syncing": "Verbunden – gleiche den aktuellen Stand ab…",
   "viewer.noPdf":
     "Der Host hat noch kein PDF hinterlegt. Sobald es bereitsteht, erscheint es automatisch.",
 
@@ -205,6 +207,7 @@ export const en: Record<TKey, string> = {
 
   "conn.connected": "Connected",
   "conn.disconnected": "Disconnected",
+  "conn.syncing": "Syncing",
   "conn.playing": "Playing",
   "conn.paused": "Paused",
 
@@ -217,6 +220,7 @@ export const en: Record<TKey, string> = {
   "viewer.fileError": "Could not load file.",
   "viewer.endedBanner": "This session was ended by the host.",
   "viewer.reconnecting": "Connection lost – trying to reconnect…",
+  "viewer.syncing": "Connected – syncing the latest position…",
   "viewer.noPdf":
     "The host hasn't added a PDF yet. It will appear automatically once it's ready.",
 

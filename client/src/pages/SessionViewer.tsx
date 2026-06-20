@@ -10,35 +10,45 @@ import {
   OctagonX,
 } from "lucide-react";
 import { api } from "@/api/client";
-import { getSocket } from "@/sockets/socket";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { getPlaybackDisplayProgress } from "@/lib/playback";
-import { cn } from "@/lib/utils";
-import { reportError } from "@/lib/errorLog";
 import { useI18n } from "@/i18n/I18nProvider";
+import { reportError } from "@/lib/errorLog";
+import { getPlaybackDisplayProgress } from "@/lib/playback";
+import {
+  shouldAcceptSessionState,
+  shouldSnapToSessionState,
+  type ViewerConnectionPhase,
+} from "@/lib/sessionSync";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
+import { cn } from "@/lib/utils";
+import { getSocket, useSocketStatus } from "@/sockets/socket";
 import { effectiveProgressFromElapsed, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
   const { code = "" } = useParams();
   const { t } = useI18n();
+  const socketStatus = useSocketStatus();
   const [session, setSession] = useState<SessionState | null>(null);
-  const [connected, setConnected] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [ended, setEnded] = useState(false);
   const [uiProgress, setUiProgress] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [distractionFree, setDistractionFree] = useState(false);
   const [numPages, setNumPages] = useState(0);
+  const [connectionPhase, setConnectionPhase] = useState<ViewerConnectionPhase>("syncing");
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
-  const displayedRef = useRef<number>(0);
-  const receivedAtRef = useRef<number>(Date.now());
+  const displayedRef = useRef(0);
+  const receivedAtRef = useRef(Date.now());
+  const numPagesRef = useRef(0);
+  const lastStateVersionRef = useRef(-1);
+  const hasEverConnectedLiveRef = useRef(false);
+  const awaitingSocketSnapshotRef = useRef(false);
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
   useWakeLock(true);
@@ -47,7 +57,21 @@ export function SessionViewer() {
     stateRef.current = session;
   }, [session]);
 
-  // ---- Sync distraction-free state with browser fullscreen ----
+  useEffect(() => {
+    numPagesRef.current = numPages;
+  }, [numPages]);
+
+  const syncUiFromState = (nextSession: SessionState) => {
+    setUiProgress(
+      getPlaybackDisplayProgress(
+        nextSession.playbackMode,
+        nextSession.progress,
+        nextSession.currentPage,
+        numPagesRef.current
+      )
+    );
+  };
+
   useEffect(() => {
     const handler = () => {
       setDistractionFree(!!document.fullscreenElement);
@@ -56,75 +80,89 @@ export function SessionViewer() {
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
-  // ---- Socket wiring ----
   useEffect(() => {
     const socket = getSocket();
-    const join = () => {
-      socket.emit("join-session", code);
-      socket.emit("request-session-state", code);
-    };
-    const onConnect = () => {
-      setConnected(true);
-      join();
-    };
-    const onDisconnect = () => setConnected(false);
-    const onState = (s: SessionState) => {
-      if (s.code === code) {
-        receivedAtRef.current = Date.now();
-        setSession(s);
-        setUiProgress(
-          getPlaybackDisplayProgress(s.playbackMode, s.progress, s.currentPage, numPages)
-        );
-        setNotFound(false);
-        if (s.status === "ended") setEnded(true);
+
+    const onState = (nextSession: SessionState) => {
+      if (nextSession.code !== code) return;
+      if (
+        !shouldAcceptSessionState(
+          lastStateVersionRef.current,
+          nextSession,
+          awaitingSocketSnapshotRef.current
+        )
+      ) {
+        return;
+      }
+
+      const previousSession = stateRef.current;
+      receivedAtRef.current = Date.now();
+      lastStateVersionRef.current = nextSession.stateVersion;
+      hasEverConnectedLiveRef.current = true;
+      awaitingSocketSnapshotRef.current = false;
+      stateRef.current = nextSession;
+      setSession(nextSession);
+      setNotFound(false);
+      setEnded(nextSession.status === "ended");
+      setConnectionPhase("connected");
+
+      if (nextSession.playbackMode === "scroll") {
+        if (
+          shouldSnapToSessionState(previousSession, nextSession, displayedRef.current)
+        ) {
+          displayedRef.current = nextSession.progress;
+          viewerRef.current?.scrollToProgress(nextSession.progress);
+          setUiProgress(nextSession.progress);
+        }
+      } else {
+        viewerRef.current?.scrollToPage(nextSession.currentPage);
+        syncUiFromState(nextSession);
       }
     };
+
     const onEnded = () => setEnded(true);
-    const onNotFound = (p: { code?: string }) => {
-      if (!p?.code || p.code === code) setNotFound(true);
+    const onNotFound = (payload: { code?: string }) => {
+      if (!payload?.code || payload.code === code) setNotFound(true);
     };
 
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
     socket.on("session-state", onState);
     socket.on("session-ended", onEnded);
     socket.on("session-not-found", onNotFound);
-    if (socket.connected) onConnect();
 
     api
       .sessionByCode(code)
-      .then((s) => {
+      .then((nextSession) => {
+        if (!shouldAcceptSessionState(lastStateVersionRef.current, nextSession)) return;
         receivedAtRef.current = Date.now();
-        setSession(s);
-        setUiProgress(
-          getPlaybackDisplayProgress(s.playbackMode, s.progress, s.currentPage, numPages)
-        );
-        if (s.status === "ended") setEnded(true);
+        lastStateVersionRef.current = nextSession.stateVersion;
+        stateRef.current = nextSession;
+        setSession(nextSession);
+        displayedRef.current = nextSession.progress;
+        syncUiFromState(nextSession);
+        setEnded(nextSession.status === "ended");
       })
       .catch(() => setNotFound(true));
 
     return () => {
       socket.emit("leave-session");
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
       socket.off("session-state", onState);
       socket.off("session-ended", onEnded);
       socket.off("session-not-found", onNotFound);
     };
   }, [code]);
 
-  // ---- Sync loop: ease toward the conductor's progress, snap on big jumps ----
   useEffect(() => {
     let raf = 0;
     let frame = 0;
     let loggedError = false;
+
     const tick = () => {
       try {
-        const s = stateRef.current;
+        const currentSession = stateRef.current;
         const viewer = viewerRef.current;
-        if (s && viewer && s.playbackMode === "scroll") {
-          const elapsed = Date.now() - receivedAtRef.current;
-          const target = effectiveProgressFromElapsed(s, elapsed);
+        if (currentSession && viewer && currentSession.playbackMode === "scroll") {
+          const elapsed = currentSession.playing ? Date.now() - receivedAtRef.current : 0;
+          const target = effectiveProgressFromElapsed(currentSession, elapsed);
           const current = displayedRef.current;
           const diff = target - current;
           const next = Math.abs(diff) > 0.04 ? target : current + diff * 0.18;
@@ -133,39 +171,73 @@ export function SessionViewer() {
           if (frame++ % 10 === 0) setUiProgress(next);
         }
       } catch (err) {
-        // Keep the loop alive; report the first occurrence only (avoid 60fps spam).
         if (!loggedError) {
           loggedError = true;
           reportError("viewer.syncLoop", err);
         }
       }
+
       raf = requestAnimationFrame(tick);
     };
+
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    if (socketStatus.state === "connected") {
+      awaitingSocketSnapshotRef.current = true;
+      setConnectionPhase("syncing");
+      socket.emit("join-session", code);
+      socket.emit("request-session-state", code);
+      return;
+    }
+
+    if (hasEverConnectedLiveRef.current) {
+      setConnectionPhase("disconnected");
+      return;
+    }
+
+    setConnectionPhase("syncing");
+  }, [code, socketStatus.state]);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    const requestSnapshot = () => {
+      if (socket.connected) {
+        awaitingSocketSnapshotRef.current = true;
+        setConnectionPhase("syncing");
+        socket.emit("request-session-state", code);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") requestSnapshot();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", requestSnapshot);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", requestSnapshot);
+    };
+  }, [code]);
 
   useEffect(() => {
     const currentSession = stateRef.current;
     const viewer = viewerRef.current;
     if (!currentSession || !viewer || currentSession.playbackMode !== "page") return;
     viewer.scrollToPage(currentSession.currentPage);
-    setUiProgress(
-      getPlaybackDisplayProgress(
-        currentSession.playbackMode,
-        currentSession.progress,
-        currentSession.currentPage,
-        numPages
-      )
-    );
+    syncUiFromState(currentSession);
   }, [numPages, session?.currentPage, session?.pdfUrl, session?.playbackMode, session?.progress]);
 
-  // ---- Immersive chrome: while playing, auto-hide the bar + footer after a
-  // short idle so the score gets the full screen. Any interaction reveals them
-  // again (and re-arms the timer), so the user is never trapped.
   const playing = session?.playing ?? false;
   const pageMode = session?.playbackMode === "page";
   const reserveChromeSpace = pageMode && !distractionFree && !chromeHidden;
+
   useEffect(() => {
     if (!playing) {
       setChromeHidden(false);
@@ -179,10 +251,12 @@ export function SessionViewer() {
     };
     arm();
     const events = ["pointerdown", "pointermove", "keydown", "touchstart"];
-    events.forEach((e) => window.addEventListener(e, arm, { passive: true }));
+    events.forEach((eventName) =>
+      window.addEventListener(eventName, arm, { passive: true })
+    );
     return () => {
       clearTimeout(timer);
-      events.forEach((e) => window.removeEventListener(e, arm));
+      events.forEach((eventName) => window.removeEventListener(eventName, arm));
     };
   }, [playing]);
 
@@ -209,11 +283,12 @@ export function SessionViewer() {
   }
 
   const pdfUrl = session?.pdfUrl || "";
+  const showConnectionBanner =
+    connectionPhase === "disconnected" ||
+    (connectionPhase === "syncing" && session !== null);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-muted/40">
-      {/* Single merged bar: brand/home + title + status + progress. Auto-hides
-          while playing. Hidden in distraction-free mode. */}
       {!distractionFree && (
         <header
           className={cn(
@@ -235,7 +310,7 @@ export function SessionViewer() {
               </p>
               <span className="font-mono text-xs text-muted-foreground">{code}</span>
             </div>
-            <ConnectionStatus connected={connected} playing={session?.playing} />
+            <ConnectionStatus playing={session?.playing} phase={connectionPhase} />
           </div>
 
           <div className="h-1 w-full bg-muted">
@@ -247,16 +322,19 @@ export function SessionViewer() {
         </header>
       )}
 
-      {/* Status banners (kept visible — they only appear on problems). Hidden in
-          distraction-free mode. */}
-      {!distractionFree && (ended || !connected) && (
+      {!distractionFree && (ended || showConnectionBanner) && (
         <div className="absolute inset-x-0 top-[calc(3.75rem+env(safe-area-inset-top))] z-30 mx-auto w-full max-w-6xl px-3 sm:px-6">
           {ended && (
             <Banner tone="muted" icon={<OctagonX className="size-4" />}>
               {t("viewer.endedBanner")}
             </Banner>
           )}
-          {!connected && (
+          {connectionPhase === "syncing" && session !== null && (
+            <Banner tone="warning" icon={<Loader2 className="size-4 animate-spin" />}>
+              {t("viewer.syncing")}
+            </Banner>
+          )}
+          {connectionPhase === "disconnected" && (
             <Banner tone="warning" icon={<Loader2 className="size-4 animate-spin" />}>
               {t("viewer.reconnecting")}
             </Banner>
@@ -264,7 +342,6 @@ export function SessionViewer() {
         </div>
       )}
 
-      {/* Document area */}
       <div className="relative flex-1 overflow-hidden">
         <div
           className={cn(
@@ -290,10 +367,8 @@ export function SessionViewer() {
         </div>
       </div>
 
-      {/* Footer hidden while playing and in distraction-free mode. */}
       {!distractionFree && !chromeHidden && <Footer />}
 
-      {/* Distraction-free toggle (also triggers browser fullscreen) */}
       <button
         type="button"
         onClick={async () => {

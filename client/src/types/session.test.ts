@@ -23,6 +23,8 @@ function makeState(over: Partial<SessionState> = {}): SessionState {
     locked: false,
     playbackMode: "scroll",
     currentPage: 1,
+    numPages: 0,
+    stateVersion: 0,
     ...over,
   };
 }

@@ -67,6 +67,8 @@ describe("createSession", () => {
     expect(s.updatedAt).toBe(s.createdAt);
     expect(s.playbackMode).toBe("scroll");
     expect(s.currentPage).toBe(1);
+    expect(s.numPages).toBe(0);
+    expect(s.stateVersion).toBe(0);
   });
 
   it("generates a SESSION-#### code", () => {
@@ -119,6 +121,7 @@ describe("updateSessionState", () => {
     expect(updated?.playing).toBe(true);
     expect(updated?.speed).toBe(0.002);
     expect(updated?.updatedAt).toBe(5_000);
+    expect(updated?.stateVersion).toBe(1);
   });
 
   it("clamps progress on update", () => {
@@ -137,6 +140,12 @@ describe("updateSessionState", () => {
     expect(updateSessionState("missing", { playing: true })).toBeUndefined();
   });
 
+  it("increments stateVersion on successive updates", () => {
+    const s = track(createSession({ title: "versioned" }));
+    expect(updateSessionState(s.id, { progress: 0.2 })?.stateVersion).toBe(1);
+    expect(updateSessionState(s.id, { currentPage: 3 })?.stateVersion).toBe(2);
+  });
+
   it("setStatus updates status", () => {
     const s = track(createSession({ title: "u" }));
     expect(setStatus(s.id, "live")?.status).toBe("live");
@@ -150,6 +159,7 @@ describe("endSession", () => {
     const ended = endSession(s.id);
     expect(ended?.status).toBe("ended");
     expect(ended?.playing).toBe(false);
+    expect(ended?.stateVersion).toBe(2);
   });
 
   it("returns undefined for a missing session", () => {

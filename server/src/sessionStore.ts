@@ -54,6 +54,8 @@ export function createSession(input: CreateSessionInput): SessionState {
     locked: false,
     playbackMode: "scroll",
     currentPage: 1,
+    numPages: 0,
+    stateVersion: 0,
   };
   adapter.set(session.id, session);
   return session;
@@ -96,6 +98,7 @@ export type SessionPatch = Partial<
     | "locked"
     | "playbackMode"
     | "currentPage"
+    | "numPages"
   >
 >;
 
@@ -105,10 +108,13 @@ export function updateSessionState(
 ): SessionState | undefined {
   const session = adapter.get(id);
   if (!session) return undefined;
+  const hasChanges = Object.keys(patch).length > 0;
   if (patch.progress !== undefined) patch.progress = clampProgress(patch.progress);
   if (patch.currentPage !== undefined) patch.currentPage = clampCurrentPage(patch.currentPage);
+  if (patch.numPages !== undefined) patch.numPages = Math.max(0, Math.round(patch.numPages) || 0);
   Object.assign(session, patch);
   session.updatedAt = Date.now();
+  if (hasChanges) session.stateVersion += 1;
   return adapter.set(session.id, session);
 }
 
@@ -122,6 +128,7 @@ export function endSession(id: string): SessionState | undefined {
   session.status = "ended";
   session.playing = false;
   session.updatedAt = Date.now();
+  session.stateVersion += 1;
   return adapter.set(session.id, session);
 }
 

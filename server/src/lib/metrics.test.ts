@@ -35,13 +35,24 @@ describe("metrics socket counters", () => {
     expect(metrics.snapshot().activeSockets).toBe(0);
   });
 
-  it("counts admin-sync into both total and the dedicated counter", () => {
+  it("counts socket events into the total counter", () => {
     metrics.recordSocketEvent("admin-play");
-    metrics.recordSocketEvent("admin-sync");
-    metrics.recordSocketEvent("admin-sync");
+    metrics.recordSocketEvent("admin-seek");
+    metrics.recordSocketEvent("join-session");
     const snap = metrics.snapshot();
     expect(snap.socket.totalEvents).toBe(3);
-    expect(snap.socket.adminSyncEvents).toBe(2);
+  });
+
+  it("counts request-session-state separately", () => {
+    metrics.recordSocketEvent("request-session-state");
+    metrics.recordSocketEvent("request-session-state");
+    expect(metrics.snapshot().socket.requestSessionStateEvents).toBe(2);
+  });
+
+  it("counts authoritative session-state broadcasts", () => {
+    metrics.recordSessionStateBroadcast();
+    metrics.recordSessionStateBroadcast();
+    expect(metrics.snapshot().socket.sessionStateBroadcasts).toBe(2);
   });
 });
 
@@ -55,16 +66,18 @@ describe("metrics.snapshot", () => {
   it("reflects sessions from the store", () => {
     const before = metrics.snapshot().totalSessions;
     createSession({ title: "Metrics test" });
-    expect(metrics.snapshot().totalSessions).toBe(before + 1);
+    const snap = metrics.snapshot();
+    expect(snap.totalSessions).toBe(before + 1);
+    expect(typeof snap.playback.activeLiveSessions).toBe("number");
   });
 
   it("computes positive rates after activity between snapshots", async () => {
     metrics.snapshot(); // establish the rate window
     metrics.recordRequest(5, 200);
-    metrics.recordSocketEvent("admin-sync");
+    metrics.recordSocketEvent("request-session-state");
     await new Promise((r) => setTimeout(r, 10));
     const snap = metrics.snapshot();
     expect(snap.http.requestsPerSec).toBeGreaterThan(0);
-    expect(snap.socket.adminSyncPerSec).toBeGreaterThan(0);
+    expect(snap.socket.requestSessionStatePerSec).toBeGreaterThan(0);
   });
 });

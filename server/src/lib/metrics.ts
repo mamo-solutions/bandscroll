@@ -13,13 +13,14 @@ let latencyMax = 0;
 
 let activeSockets = 0;
 let socketEventsTotal = 0;
-let adminSyncEvents = 0;
+let requestSessionStateEvents = 0;
+let sessionStateBroadcasts = 0;
 
 // Previous-snapshot markers for rate computation.
 let lastSnapshotAt = Date.now();
 let lastHttpRequests = 0;
 let lastSocketEvents = 0;
-let lastAdminSyncEvents = 0;
+let lastRequestSessionStateEvents = 0;
 
 export const metrics = {
   recordRequest(durationMs: number, status: number): void {
@@ -32,7 +33,11 @@ export const metrics = {
 
   recordSocketEvent(name: string): void {
     socketEventsTotal++;
-    if (name === "admin-sync") adminSyncEvents++;
+    if (name === "request-session-state") requestSessionStateEvents++;
+  },
+
+  recordSessionStateBroadcast(): void {
+    sessionStateBroadcasts++;
   },
 
   incSocket(): number {
@@ -57,6 +62,7 @@ export const metrics = {
       (sum, s) => sum + s.connectedClients,
       0
     );
+    const activeLiveSessions = sessions.filter((session) => session.status === "live").length;
 
     const round = (n: number) => Math.round(n * 100) / 100;
     const snap = {
@@ -79,24 +85,31 @@ export const metrics = {
       socket: {
         totalEvents: socketEventsTotal,
         eventsPerSec: round((socketEventsTotal - lastSocketEvents) / elapsedSec),
-        adminSyncEvents,
-        adminSyncPerSec: round((adminSyncEvents - lastAdminSyncEvents) / elapsedSec),
+        requestSessionStateEvents,
+        requestSessionStatePerSec: round(
+          (requestSessionStateEvents - lastRequestSessionStateEvents) / elapsedSec
+        ),
+        sessionStateBroadcasts,
+      },
+      playback: {
+        activeLiveSessions,
       },
     };
 
     lastSnapshotAt = now;
     lastHttpRequests = httpRequests;
     lastSocketEvents = socketEventsTotal;
-    lastAdminSyncEvents = adminSyncEvents;
+    lastRequestSessionStateEvents = requestSessionStateEvents;
     return snap;
   },
 
   /** Test helper: reset all counters and the rate window. */
   reset(): void {
     httpRequests = httpErrors5xx = latencySum = latencyCount = latencyMax = 0;
-    activeSockets = socketEventsTotal = adminSyncEvents = 0;
+    activeSockets = socketEventsTotal = requestSessionStateEvents = sessionStateBroadcasts = 0;
     lastSnapshotAt = Date.now();
-    lastHttpRequests = lastSocketEvents = lastAdminSyncEvents = 0;
+    lastHttpRequests = lastSocketEvents = 0;
+    lastRequestSessionStateEvents = 0;
   },
 };
 

@@ -24,6 +24,8 @@ export type SessionState = {
   locked: boolean;
   playbackMode: PlaybackMode;
   currentPage: number;
+  numPages: number;
+  stateVersion: number;
 };
 
 /** Compute live progress from the last server snapshot.
