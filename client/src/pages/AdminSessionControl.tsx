@@ -295,6 +295,16 @@ export function AdminSessionControl() {
           e.preventDefault();
           restart();
           break;
+        case "previousPage":
+          if (session.playbackMode !== "page") break;
+          e.preventDefault();
+          goToPage(session.currentPage - 1);
+          break;
+        case "nextPage":
+          if (session.playbackMode !== "page") break;
+          e.preventDefault();
+          goToPage(session.currentPage + 1);
+          break;
         case "nextMarker":
           e.preventDefault();
           jumpToNextMarker();

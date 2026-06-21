@@ -4,6 +4,8 @@ export type AdminShortcutAction =
   | "speedUp"
   | "speedDown"
   | "restart"
+  | "previousPage"
+  | "nextPage"
   | "nextMarker"
   | "stop";
 
@@ -14,6 +16,8 @@ export type AdminShortcutSlot =
   | "speedUp"
   | "speedDown"
   | "restart"
+  | "previousPage"
+  | "nextPage"
   | "nextMarker"
   | "stop";
 
@@ -35,6 +39,8 @@ export const ADMIN_SHORTCUT_SLOTS: readonly AdminShortcutSlot[] = [
   "speedUp",
   "speedDown",
   "restart",
+  "previousPage",
+  "nextPage",
   "nextMarker",
   "stop",
 ];
@@ -46,6 +52,8 @@ const EMPTY_BINDINGS: AdminShortcutBindings = {
   speedUp: "",
   speedDown: "",
   restart: "",
+  previousPage: "",
+  nextPage: "",
   nextMarker: "",
   stop: "",
 };
@@ -92,6 +100,8 @@ const SLOT_TO_ACTION: Record<AdminShortcutSlot, AdminShortcutAction> = {
   speedUp: "speedUp",
   speedDown: "speedDown",
   restart: "restart",
+  previousPage: "previousPage",
+  nextPage: "nextPage",
   nextMarker: "nextMarker",
   stop: "stop",
 };
@@ -104,6 +114,8 @@ const PRESET_BINDINGS: Record<Exclude<AdminShortcutPresetId, "custom">, AdminSho
     speedUp: "ArrowUp",
     speedDown: "ArrowDown",
     restart: "Digit0",
+    previousPage: "",
+    nextPage: "",
     nextMarker: "KeyS",
     stop: "",
   },
@@ -114,6 +126,8 @@ const PRESET_BINDINGS: Record<Exclude<AdminShortcutPresetId, "custom">, AdminSho
     speedUp: "Equal",
     speedDown: "Minus",
     restart: "Home",
+    previousPage: "",
+    nextPage: "",
     nextMarker: "KeyS",
     stop: "Backspace",
   },
@@ -124,6 +138,8 @@ const PRESET_BINDINGS: Record<Exclude<AdminShortcutPresetId, "custom">, AdminSho
     speedUp: "NumpadAdd",
     speedDown: "NumpadSubtract",
     restart: "Numpad7",
+    previousPage: "",
+    nextPage: "",
     nextMarker: "Numpad3",
     stop: "NumpadDecimal",
   },

@@ -181,6 +181,8 @@ export const de = {
   "control.shortcutSpeedUp": "Schneller",
   "control.shortcutSpeedDown": "Langsamer",
   "control.shortcutRestart": "Anfang",
+  "control.shortcutPreviousPage": "Vorherige Seite",
+  "control.shortcutNextPage": "Nächste Seite",
   "control.shortcutNextMarker": "Nächster Marker",
   "control.shortcutStop": "Stop",
 } as const;
@@ -360,6 +362,8 @@ export const en: Record<TKey, string> = {
   "control.shortcutSpeedUp": "Speed up",
   "control.shortcutSpeedDown": "Slow down",
   "control.shortcutRestart": "Restart",
+  "control.shortcutPreviousPage": "Previous page",
+  "control.shortcutNextPage": "Next page",
   "control.shortcutNextMarker": "Next marker",
   "control.shortcutStop": "Stop",
 };

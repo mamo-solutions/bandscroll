@@ -83,6 +83,18 @@ export function AdminSessionSetupPanel({
     { slot: "speedUp", label: t("control.shortcutSpeedUp") },
     { slot: "speedDown", label: t("control.shortcutSpeedDown") },
     { slot: "restart", label: t("control.shortcutRestart") },
+    ...(session.playbackMode === "page"
+      ? [
+          {
+            slot: "previousPage" as const,
+            label: t("control.shortcutPreviousPage"),
+          },
+          {
+            slot: "nextPage" as const,
+            label: t("control.shortcutNextPage"),
+          },
+        ]
+      : []),
     { slot: "nextMarker", label: t("control.shortcutNextMarker") },
     { slot: "stop", label: t("control.shortcutStop") },
   ];

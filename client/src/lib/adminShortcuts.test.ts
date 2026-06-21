@@ -11,6 +11,8 @@ describe("admin shortcuts", () => {
     const bindings = getShortcutPresetBindings("footswitch");
 
     expect(bindings.restart).toBe("Digit0");
+    expect(bindings.previousPage).toBe("");
+    expect(bindings.nextPage).toBe("");
     expect(bindings.nextMarker).toBe("KeyS");
     expect(deriveShortcutPreset(bindings)).toBe("footswitch");
   });
@@ -29,5 +31,14 @@ describe("admin shortcuts", () => {
     expect(getShortcutAction("Equal", bindings)).toBe("speedUp");
     expect(getShortcutAction("KeyS", bindings)).toBe("nextMarker");
     expect(getShortcutAction("Unknown", bindings)).toBeNull();
+  });
+
+  it("maps page navigation bindings to their actions", () => {
+    const bindings = getShortcutPresetBindings("footswitch");
+    const next = assignShortcutBinding(bindings, "previousPage", "BracketLeft");
+    const final = assignShortcutBinding(next, "nextPage", "BracketRight");
+
+    expect(getShortcutAction("BracketLeft", final)).toBe("previousPage");
+    expect(getShortcutAction("BracketRight", final)).toBe("nextPage");
   });
 });
