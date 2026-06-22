@@ -90,6 +90,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const isImage = IMAGE_RE.test(fileUrl);
   const singlePageMode = visiblePage !== undefined;
   const clampedVisiblePage = clampPage(visiblePage ?? 1, numPages);
+  const useBlackCanvasChrome = backgroundMode === "black" && singlePageMode;
 
   // Reset everything whenever the file changes (initial load or swap).
   useEffect(() => {
@@ -330,7 +331,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               onError={() => setError("image")}
               className={cn(
                 "h-auto",
-                edgeToEdge ? "rounded-none shadow-none" : "rounded-lg shadow-[var(--shadow-lift)]"
+                edgeToEdge || useBlackCanvasChrome
+                  ? "rounded-none shadow-none"
+                  : "rounded-lg shadow-[var(--shadow-lift)]"
               )}
             />
           </div>
@@ -370,7 +373,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                   }}
                   className={cn(
                     "pdf-page-fit overflow-hidden",
-                    edgeToEdge ? "rounded-none shadow-none" : "rounded-lg shadow-[var(--shadow-lift)]",
+                    edgeToEdge || useBlackCanvasChrome
+                      ? "rounded-none shadow-none"
+                      : "rounded-lg shadow-[var(--shadow-lift)]",
                     backgroundMode === "black" ? "bg-black" : "bg-card"
                   )}
                   style={{

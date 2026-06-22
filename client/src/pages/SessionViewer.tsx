@@ -236,6 +236,7 @@ export function SessionViewer() {
 
   const playing = session?.playing ?? false;
   const pageMode = session?.playbackMode === "page";
+  const blackBackground = session?.backgroundMode === "black";
   const reserveChromeSpace = pageMode && !distractionFree && !chromeHidden;
 
   useEffect(() => {
@@ -291,13 +292,16 @@ export function SessionViewer() {
     <div
       className={cn(
         "flex h-dvh flex-col overflow-hidden",
-        session?.backgroundMode === "black" ? "bg-black" : "bg-muted/40"
+        blackBackground ? "bg-black text-white" : "bg-muted/40"
       )}
     >
       {!distractionFree && (
         <header
           className={cn(
-            "absolute inset-x-0 top-0 z-20 border-b border-border/60 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-transform duration-300 ease-out",
+            "absolute inset-x-0 top-0 z-20 pt-[env(safe-area-inset-top)] transition-transform duration-300 ease-out",
+            blackBackground
+              ? "border-b border-white/10 bg-black/96 text-white backdrop-blur-none"
+              : "border-b border-border/60 bg-background/85 backdrop-blur-md",
             chromeHidden && "-translate-y-full"
           )}
         >
@@ -313,12 +317,19 @@ export function SessionViewer() {
               <p className="truncate font-heading text-sm font-semibold leading-tight sm:text-base">
                 {session?.title ?? t("viewer.loading")}
               </p>
-              <span className="font-mono text-xs text-muted-foreground">{code}</span>
+              <span
+                className={cn(
+                  "font-mono text-xs",
+                  blackBackground ? "text-white/58" : "text-muted-foreground"
+                )}
+              >
+                {code}
+              </span>
             </div>
             <ConnectionStatus playing={session?.playing} phase={connectionPhase} />
           </div>
 
-          <div className="h-1 w-full bg-muted">
+          <div className={cn("h-1 w-full", blackBackground ? "bg-white/10" : "bg-muted")}>
             <div
               className="h-full bg-primary transition-[width] duration-200 ease-linear"
               style={{ width: `${Math.round(uiProgress * 100)}%` }}
@@ -367,14 +378,19 @@ export function SessionViewer() {
               onDocumentLoad={setNumPages}
             />
           ) : (
-            <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
+            <div
+              className={cn(
+                "flex h-full items-center justify-center p-8 text-center",
+                blackBackground ? "text-white/60" : "text-muted-foreground"
+              )}
+            >
               {t("viewer.noPdf")}
             </div>
           )}
         </div>
       </div>
 
-      {!distractionFree && !chromeHidden && <Footer />}
+      {!distractionFree && !chromeHidden && <Footer inverse={blackBackground} />}
 
       <button
         type="button"
@@ -392,7 +408,12 @@ export function SessionViewer() {
             // Fullscreen request may be denied; keep the UI state change.
           }
         }}
-        className="fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-[var(--shadow-lift)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          "fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border shadow-[var(--shadow-lift)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          blackBackground
+            ? "border-white/10 bg-black text-white hover:bg-neutral-900"
+            : "border-border bg-card text-foreground hover:bg-muted"
+        )}
         title={distractionFree ? t("control.showUi") : t("control.hideUi")}
         aria-label={distractionFree ? t("control.showUi") : t("control.hideUi")}
       >

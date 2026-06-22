@@ -12,9 +12,15 @@ function GithubMark() {
 }
 import { useI18n } from "@/i18n/I18nProvider";
 import { LANGUAGES } from "@/i18n/translations";
+import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/version";
 
-export function Footer() {
+type FooterProps = {
+  inverse?: boolean;
+  className?: string;
+};
+
+export function Footer({ inverse = false, className }: FooterProps) {
   const { t, lang, setLang } = useI18n();
 
   // Split the localized credit template around its {link} placeholder so we can
@@ -23,10 +29,26 @@ export function Footer() {
   const other = LANGUAGES.find((l) => l.code !== lang)!;
 
   return (
-    <footer className="mt-auto border-t border-border/50">
-      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground sm:justify-between sm:px-6">
+    <footer
+      className={cn(
+        "mt-auto border-t",
+        inverse ? "border-white/10 bg-black text-white/72" : "border-border/50",
+        className
+      )}
+    >
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-3 text-xs sm:justify-between sm:px-6",
+          inverse ? "text-white/60" : "text-muted-foreground"
+        )}
+      >
         <p className="text-center sm:text-left">
-          <span className="font-heading font-semibold text-foreground/90">
+          <span
+            className={cn(
+              "font-heading font-semibold",
+              inverse ? "text-white/88" : "text-foreground/90"
+            )}
+          >
             BandScroll
           </span>{" "}
           {before}
@@ -34,12 +56,20 @@ export function Footer() {
             href="https://mamo.solutions"
             target="_blank"
             rel="noreferrer"
-            className="font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline"
+            className={cn(
+              "font-medium underline-offset-4 hover:underline",
+              inverse ? "text-white/78 hover:text-white" : "text-foreground/80 hover:text-foreground"
+            )}
           >
             mamo.solutions
           </a>
           {after}
-          <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
+          <span
+            className={cn(
+              "ml-1.5 font-mono text-[11px]",
+              inverse ? "text-white/45" : "text-muted-foreground"
+            )}
+          >
             {APP_VERSION}
           </span>
         </p>
@@ -49,14 +79,20 @@ export function Footer() {
             href="https://github.com/mamo-solutions/bandscroll"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              "inline-flex items-center gap-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              inverse ? "hover:text-white" : "hover:text-foreground"
+            )}
           >
             <GithubMark />
             GitHub
           </a>
           <Link
             to="/admin"
-            className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              "inline-flex items-center gap-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              inverse ? "hover:text-white" : "hover:text-foreground"
+            )}
           >
             <Mic2 className="size-4" />
             {t("footer.hostSession")}
@@ -64,7 +100,10 @@ export function Footer() {
           <button
             type="button"
             onClick={() => setLang(other.code)}
-            className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              "inline-flex items-center gap-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              inverse ? "hover:text-white" : "hover:text-foreground"
+            )}
             aria-label={`Sprache wechseln: ${other.label}`}
           >
             <Languages className="size-4" />
