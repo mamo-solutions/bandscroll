@@ -6,7 +6,6 @@ import {
   FileX2,
   Loader2,
   Maximize,
-  Minimize,
   OctagonX,
 } from "lucide-react";
 import { api } from "@/api/client";
@@ -392,33 +391,32 @@ export function SessionViewer() {
 
       {!distractionFree && !chromeHidden && <Footer inverse={blackBackground} />}
 
-      <button
-        type="button"
-        onClick={async () => {
-          const next = !distractionFree;
-          setDistractionFree(next);
-          if (!document.fullscreenEnabled) return;
-          try {
-            if (next && !document.fullscreenElement) {
-              await document.documentElement.requestFullscreen();
-            } else if (!next && document.fullscreenElement) {
-              await document.exitFullscreen();
+      {!distractionFree && (
+        <button
+          type="button"
+          onClick={async () => {
+            setDistractionFree(true);
+            if (!document.fullscreenEnabled) return;
+            try {
+              if (!document.fullscreenElement) {
+                await document.documentElement.requestFullscreen();
+              }
+            } catch {
+              // Fullscreen request may be denied; keep the UI state change.
             }
-          } catch {
-            // Fullscreen request may be denied; keep the UI state change.
-          }
-        }}
-        className={cn(
-          "fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border shadow-[var(--shadow-lift)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          blackBackground
-            ? "border-white/10 bg-black text-white hover:bg-neutral-900"
-            : "border-border bg-card text-foreground hover:bg-muted"
-        )}
-        title={distractionFree ? t("control.showUi") : t("control.hideUi")}
-        aria-label={distractionFree ? t("control.showUi") : t("control.hideUi")}
-      >
-        {distractionFree ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
-      </button>
+          }}
+          className={cn(
+            "fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border shadow-[var(--shadow-lift)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            blackBackground
+              ? "border-white/10 bg-black text-white hover:bg-neutral-900"
+              : "border-border bg-card text-foreground hover:bg-muted"
+          )}
+          title={t("control.hideUi")}
+          aria-label={t("control.hideUi")}
+        >
+          <Maximize className="size-5" />
+        </button>
+      )}
     </div>
   );
 }

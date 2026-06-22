@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  ChevronLeft,
+  ChevronRight,
+  Crosshair,
   FileWarning,
   LayoutDashboard,
   Loader2,
   LogOut,
   Maximize,
-  Minimize,
   Music,
+  Pause,
+  Play,
   RefreshCw,
+  SkipBack,
 } from "lucide-react";
 import { api } from "@/api/client";
 import { auth } from "@/api/auth";
@@ -626,6 +631,7 @@ export function AdminSessionControl() {
                   ref={viewerRef}
                   fileUrl={session.pdfUrl}
                   backgroundMode={session.backgroundMode}
+                  flush={!distractionFree}
                   edgeToEdge={distractionFree}
                   visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
                   onUserScroll={(progress) => {
@@ -670,6 +676,70 @@ export function AdminSessionControl() {
                 </div>
               </div>
             )}
+
+            {!distractionFree && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 hidden justify-center px-3 lg:flex">
+                <div className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-2 rounded-2xl border border-border/70 bg-background/90 px-3 py-2 shadow-[var(--shadow-lift)] backdrop-blur-md">
+                  {session.playbackMode === "page" && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(session.currentPage - 1)}
+                        disabled={session.currentPage <= 1}
+                        className="min-w-[8.5rem] justify-center"
+                      >
+                        <ChevronLeft className="size-4" />
+                        {t("controls.previousPage")}
+                      </Button>
+                      <div className="rounded-xl bg-muted px-3 py-2 text-sm font-semibold tabular-nums text-foreground">
+                        {Math.min(Math.max(session.currentPage, 1), Math.max(numPages, 1))} /{" "}
+                        {Math.max(numPages, 1)}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(session.currentPage + 1)}
+                        disabled={numPages > 0 && session.currentPage >= numPages}
+                        className="min-w-[8.5rem] justify-center"
+                      >
+                        {t("controls.nextPage")}
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </>
+                  )}
+
+                  <div className="h-8 w-px bg-border/70" aria-hidden="true" />
+
+                  {session.playing ? (
+                    <Button variant="warning" size="sm" onClick={pause} className="justify-center">
+                      <Pause className="size-4" />
+                      {t("controls.pause")}
+                    </Button>
+                  ) : (
+                    <Button variant="success" size="sm" onClick={play} className="justify-center">
+                      <Play className="size-4" />
+                      {t("controls.play")}
+                    </Button>
+                  )}
+
+                  <Button variant="outline" size="sm" onClick={restart} className="justify-center">
+                    <SkipBack className="size-4" />
+                    {t("controls.startOver")}
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={seekToCurrent}
+                    className="justify-center"
+                  >
+                    <Crosshair className="size-4" />
+                    {t("controls.here")}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {!distractionFree && (
@@ -679,6 +749,7 @@ export function AdminSessionControl() {
                 session={session}
                 liveProgress={uiProgress}
                 numPages={numPages}
+                hidePrimaryControlsOnDesktop
                 onPlay={play}
                 onPause={pause}
                 onStop={stop}
@@ -713,28 +784,27 @@ export function AdminSessionControl() {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={async () => {
-          const next = !distractionFree;
-          setDistractionFree(next);
-          if (!document.fullscreenEnabled) return;
-          try {
-            if (next && !document.fullscreenElement) {
-              await document.documentElement.requestFullscreen();
-            } else if (!next && document.fullscreenElement) {
-              await document.exitFullscreen();
+      {!distractionFree && (
+        <button
+          type="button"
+          onClick={async () => {
+            setDistractionFree(true);
+            if (!document.fullscreenEnabled) return;
+            try {
+              if (!document.fullscreenElement) {
+                await document.documentElement.requestFullscreen();
+              }
+            } catch {
+              // Fullscreen request may be denied; keep the UI state change.
             }
-          } catch {
-            // Fullscreen request may be denied; keep the UI state change.
-          }
-        }}
-        className="fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-[var(--shadow-lift)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        title={distractionFree ? t("control.showUi") : t("control.hideUi")}
-        aria-label={distractionFree ? t("control.showUi") : t("control.hideUi")}
-      >
-        {distractionFree ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
-      </button>
+          }}
+          className="fixed bottom-4 right-4 z-50 inline-flex size-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-[var(--shadow-lift)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={t("control.hideUi")}
+          aria-label={t("control.hideUi")}
+        >
+          <Maximize className="size-5" />
+        </button>
+      )}
     </main>
   );
 }

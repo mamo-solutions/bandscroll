@@ -47,6 +47,7 @@ type Props = {
   fileUrl: string;
   backgroundMode?: SessionBackgroundMode;
   edgeToEdge?: boolean;
+  flush?: boolean;
   /** When set, render only this page instead of the full scrollable document. */
   visiblePage?: number;
   /** Called (already DOM-throttled by rAF) when the user scrolls manually. */
@@ -63,6 +64,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     fileUrl,
     backgroundMode = "light",
     edgeToEdge = false,
+    flush = false,
     visiblePage,
     onUserScroll,
     onDocumentLoad,
@@ -91,6 +93,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const singlePageMode = visiblePage !== undefined;
   const clampedVisiblePage = clampPage(visiblePage ?? 1, numPages);
   const useBlackCanvasChrome = backgroundMode === "black" && singlePageMode;
+  const chromeFlush = edgeToEdge || flush;
 
   // Reset everything whenever the file changes (initial load or swap).
   useEffect(() => {
@@ -115,7 +118,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     singlePageMode && aspect && containerHeight > 0
       ? Math.max(
           280,
-          Math.min(displayWidth, Math.floor((containerHeight - (edgeToEdge ? 0 : 24)) / aspect))
+          Math.min(displayWidth, Math.floor((containerHeight - (chromeFlush ? 0 : 24)) / aspect))
         )
       : displayWidth;
 
@@ -197,7 +200,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const el = scrollRef.current;
     if (!el) return;
     const measure = () => {
-      const inset = edgeToEdge ? 0 : 24;
+      const inset = chromeFlush ? 0 : 24;
       const w = Math.min(RENDER_WIDTH, el.clientWidth - inset);
       setDisplayWidth(Math.max(280, w));
       setContainerHeight(el.clientHeight);
@@ -206,7 +209,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [edgeToEdge]);
+  }, [chromeFlush]);
 
   // Compute which pages should be mounted based on the current scroll position.
   const updateRange = useCallback(() => {
@@ -295,10 +298,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         <div
           className={cn(
             "flex flex-col items-center",
-            edgeToEdge ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
+            chromeFlush ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
             singlePageMode
-              ? cn("h-full justify-center", edgeToEdge ? "pb-0" : "pb-3")
-              : edgeToEdge
+              ? cn("h-full justify-center", chromeFlush ? "pb-0" : "pb-3")
+              : chromeFlush
                 ? "pb-0"
                 : "pb-[55vh]"
           )}
@@ -331,7 +334,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               onError={() => setError("image")}
               className={cn(
                 "h-auto",
-                edgeToEdge || useBlackCanvasChrome
+                chromeFlush || useBlackCanvasChrome
                   ? "rounded-none shadow-none"
                   : "rounded-lg shadow-[var(--shadow-lift)]"
               )}
@@ -341,6 +344,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       ) : (
         <Document
           file={fileUrl}
+          className={cn(singlePageMode && "h-full")}
           options={DOCUMENT_OPTIONS}
           onLoadSuccess={({ numPages }) => {
             setNumPages(numPages);
@@ -356,10 +360,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         >
           <div
             className={cn(
-              edgeToEdge ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
+              chromeFlush ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
               singlePageMode
-                ? cn("flex h-full items-center justify-center", edgeToEdge ? "pb-0" : "pb-3")
-                : cn("flex flex-col items-center", edgeToEdge ? "gap-0 pb-0" : "gap-3 pb-[55vh]")
+                ? cn("flex h-full items-center justify-center", chromeFlush ? "pb-0" : "pb-3")
+                : cn("flex flex-col items-center", chromeFlush ? "gap-0 pb-0" : "gap-3 pb-[55vh]")
             )}
           >
             {Array.from({ length: numPages }, (_, i) => {
@@ -373,7 +377,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                   }}
                   className={cn(
                     "pdf-page-fit overflow-hidden",
-                    edgeToEdge || useBlackCanvasChrome
+                    chromeFlush || useBlackCanvasChrome
                       ? "rounded-none shadow-none"
                       : "rounded-lg shadow-[var(--shadow-lift)]",
                     backgroundMode === "black" ? "bg-black" : "bg-card"
@@ -385,12 +389,19 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                 >
                   {mounted && (
                     <Page
+                      key={`${i + 1}-${backgroundMode}`}
                       pageNumber={i + 1}
                       width={singlePageMode ? singlePageWidth : RENDER_WIDTH}
                       devicePixelRatio={PAGE_DPR}
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
-                      loading={null as unknown as undefined}
+                      loading={
+                        backgroundMode === "black" ? (
+                          <div className="h-full min-h-24 w-full bg-black" />
+                        ) : (null as unknown as undefined)
+                      }
+                      canvasBackground={backgroundMode === "black" ? "#000000" : undefined}
+                      className={cn(backgroundMode === "black" && "[&>canvas]:bg-black")}
                       onLoadSuccess={(page) => {
                         if (aspectRef.current == null) {
                           const w = page.originalWidth || page.width;
