@@ -201,7 +201,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     if (!el) return;
     const measure = () => {
       const inset = chromeFlush ? 0 : 24;
-      const w = Math.min(RENDER_WIDTH, el.clientWidth - inset);
+      const w = el.clientWidth - inset;
       setDisplayWidth(Math.max(280, w));
       setContainerHeight(el.clientHeight);
     };
