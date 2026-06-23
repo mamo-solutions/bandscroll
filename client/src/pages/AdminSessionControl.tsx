@@ -192,10 +192,12 @@ export function AdminSessionControl() {
     }
   }, [id, socket, socketStatus.state]);
 
-  const { setNode, setHidden } = useHeaderSlot();
+  const { setNode, setHidden, setFooterHidden } = useHeaderSlot();
   useEffect(() => {
     setHidden(distractionFree);
-  }, [distractionFree, setHidden]);
+    setFooterHidden(distractionFree);
+    return () => setFooterHidden(false);
+  }, [distractionFree, setFooterHidden, setHidden]);
 
   useEffect(() => {
     if (!session || distractionFree) {

@@ -5,7 +5,11 @@ import { useHeaderSlot } from "@/components/HeaderSlot";
 import { cn } from "@/lib/utils";
 
 export function Layout() {
-  const { node: headerNode, hidden: headerHidden } = useHeaderSlot();
+  const {
+    node: headerNode,
+    hidden: headerHidden,
+    footerHidden,
+  } = useHeaderSlot();
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -36,7 +40,7 @@ export function Layout() {
 
       <Outlet />
 
-      <Footer />
+      {!footerHidden && <Footer />}
     </div>
   );
 }
