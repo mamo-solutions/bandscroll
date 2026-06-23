@@ -561,12 +561,16 @@ export function AdminSessionControl() {
   }
 
   const shortcutPreset = deriveShortcutPreset(shortcutBindings);
+  const fullscreenBlackBackground =
+    distractionFree && session?.backgroundMode === "black";
 
   return (
     <main
       className={cn(
-        "mx-auto w-full flex-1 px-4 pt-4 sm:px-6",
-        distractionFree ? "max-w-none pb-0" : "max-w-7xl pb-8"
+        "mx-auto w-full flex-1",
+        distractionFree
+          ? cn("max-w-none p-0", fullscreenBlackBackground && "bg-black text-white")
+          : "max-w-7xl px-4 pt-4 pb-8 sm:px-6"
       )}
     >
       <input
@@ -610,6 +614,10 @@ export function AdminSessionControl() {
           className={cn(
             "relative overflow-hidden p-0",
             distractionFree && "h-dvh",
+            distractionFree &&
+              (fullscreenBlackBackground
+                ? "rounded-none border-0 bg-black text-white shadow-none"
+                : "rounded-none border-0 bg-transparent shadow-none"),
             !distractionFree && "border-border/80 bg-card/95"
           )}
         >
@@ -656,8 +664,20 @@ export function AdminSessionControl() {
             </div>
 
             {distractionFree && (session.markers ?? []).length > 0 && (
-              <div className="absolute right-3 top-3 z-10 max-h-[calc(100%-6rem)] w-52 overflow-y-auto rounded-xl border border-border/60 bg-background/88 p-2 shadow-[var(--shadow-lift)] backdrop-blur-md">
-                <div className="mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <div
+                className={cn(
+                  "absolute right-3 top-3 z-10 max-h-[calc(100%-6rem)] w-52 overflow-y-auto rounded-xl p-2 shadow-[var(--shadow-lift)] backdrop-blur-md",
+                  fullscreenBlackBackground
+                    ? "border border-white/10 bg-black/88 text-white"
+                    : "border border-border/60 bg-background/88"
+                )}
+              >
+                <div
+                  className={cn(
+                    "mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide",
+                    fullscreenBlackBackground ? "text-white/58" : "text-muted-foreground"
+                  )}
+                >
                   {t("controls.setlist")}
                 </div>
                 <div className="flex flex-col gap-0.5">
@@ -666,11 +686,26 @@ export function AdminSessionControl() {
                       key={marker.id}
                       type="button"
                       onClick={() => seekToMarker(marker.page)}
-                      className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
+                      className={cn(
+                        "flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                        fullscreenBlackBackground ? "hover:bg-white/8" : "hover:bg-muted"
+                      )}
                     >
-                      <Music className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                      <Music
+                        className={cn(
+                          "mt-0.5 size-3.5 shrink-0",
+                          fullscreenBlackBackground ? "text-white/58" : "text-muted-foreground"
+                        )}
+                      />
                       <span className="min-w-0 flex-1 truncate">{marker.title}</span>
-                      <span className="font-mono text-xs text-muted-foreground">{marker.page}</span>
+                      <span
+                        className={cn(
+                          "font-mono text-xs",
+                          fullscreenBlackBackground ? "text-white/58" : "text-muted-foreground"
+                        )}
+                      >
+                        {marker.page}
+                      </span>
                     </button>
                   ))}
                 </div>
