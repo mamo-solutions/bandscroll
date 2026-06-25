@@ -4,6 +4,10 @@
   "private": true,
   "license": "Apache-2.0",
   "description": "Realtime synchronized PDF scrolling for live sessions (PWA MVP)",
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "npm --prefix server run dev",

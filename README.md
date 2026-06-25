@@ -63,13 +63,21 @@ on the server and shared between HTTP and WebSocket via a single session.
 
 ## Quick start
 
-Requirements: Node.js 20+ and npm.
+Requirements: Node.js 22.x and npm 10+.
 
 ```bash
 git clone <your-fork-url> bandscroll && cd bandscroll
 cp .env.example .env          # then edit ADMIN_PASSWORD and ADMIN_SESSION_SECRET
 npm install && npm run install:all
 npm run dev                   # backend on :3000, frontend on :5173
+```
+
+If you switch Node versions, reinstall dependencies before running tests so
+native addons such as `better-sqlite3` are rebuilt for the active runtime:
+
+```bash
+nvm use
+npm install && npm run install:all
 ```
 
 Open <http://localhost:5173>. The host area is at `/admin` (link in the footer).
