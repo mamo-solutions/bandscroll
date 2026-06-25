@@ -18,7 +18,6 @@ import {
 import { api, ApiError } from "@/api/client";
 import { auth } from "@/api/auth";
 import { AdminSessionSetupPanel } from "@/components/AdminSessionSetupPanel";
-import { DocumentAccessLink } from "@/components/DocumentAccessLink";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { PlaybackControls, type PlaybackControlsHandle } from "@/components/PlaybackControls";
 import { useHeaderSlot } from "@/components/HeaderSlot";
@@ -904,13 +903,6 @@ export function AdminSessionControl() {
         >
           <Maximize className="size-5" />
         </button>
-      )}
-      {session.pdfUrl && (
-        <DocumentAccessLink
-          href={session.pdfUrl}
-          inverse={fullscreenBlackBackground}
-          className={cn(!distractionFree && "left-4 bottom-16")}
-        />
       )}
     </main>
   );
