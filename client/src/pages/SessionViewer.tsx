@@ -9,7 +9,6 @@ import {
   OctagonX,
 } from "lucide-react";
 import { api } from "@/api/client";
-import { DocumentAccessLink } from "@/components/DocumentAccessLink";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Footer } from "@/components/Footer";
@@ -432,7 +431,6 @@ export function SessionViewer() {
       </div>
 
       {!distractionFree && !chromeHidden && <Footer inverse={blackBackground} />}
-      {pdfUrl && <DocumentAccessLink href={pdfUrl} inverse={blackBackground} className="bottom-4 left-4" />}
 
       {!distractionFree && (
         <button
