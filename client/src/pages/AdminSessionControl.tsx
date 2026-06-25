@@ -15,9 +15,10 @@ import {
   RefreshCw,
   SkipBack,
 } from "lucide-react";
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { auth } from "@/api/auth";
 import { AdminSessionSetupPanel } from "@/components/AdminSessionSetupPanel";
+import { DocumentAccessLink } from "@/components/DocumentAccessLink";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { PlaybackControls, type PlaybackControlsHandle } from "@/components/PlaybackControls";
 import { useHeaderSlot } from "@/components/HeaderSlot";
@@ -63,6 +64,9 @@ export function AdminSessionControl() {
   const [uploading, setUploading] = useState(false);
   const [numPages, setNumPages] = useState(0);
   const [distractionFree, setDistractionFree] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [savingDocumentDescription, setSavingDocumentDescription] = useState(false);
   const [shortcutBindings, setShortcutBindings] = useState<AdminShortcutBindings>(() =>
     loadShortcutBindings()
   );
@@ -220,12 +224,24 @@ export function AdminSessionControl() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/admin")}
+            aria-label={t("nav.dashboard")}
+            title={t("nav.dashboard")}
+          >
             <LayoutDashboard />
             <span className="hidden sm:inline">{t("nav.dashboard")}</span>
           </Button>
 
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            aria-label={t("nav.logout")}
+            title={t("nav.logout")}
+          >
             <LogOut />
             <span className="hidden sm:inline">{t("nav.logout")}</span>
           </Button>
@@ -526,8 +542,9 @@ export function AdminSessionControl() {
     e.target.value = "";
     if (!file) return;
     setUploading(true);
+    setErrorMessage(null);
     try {
-      const updated = await api.uploadPdf(id, file);
+      const updated = await api.uploadPdf(id, file, stateRef.current?.documentDescription);
       liveProgressRef.current = 0;
       lastWallRef.current = Date.now();
       stateRef.current = updated;
@@ -540,8 +557,30 @@ export function AdminSessionControl() {
           numPagesRef.current
         )
       );
+      setAnnouncement(t("control.uploadCompleteAnnouncement"));
+    } catch (error) {
+      if (error instanceof ApiError && error.message === "document-description-required") {
+        setErrorMessage(t("control.documentDescriptionRequired"));
+      } else {
+        setErrorMessage(t("control.uploadFailed"));
+      }
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function updateDocumentDescription(documentDescription: string) {
+    setSavingDocumentDescription(true);
+    setErrorMessage(null);
+    try {
+      const updated = await api.updateSessionDetails(id, { documentDescription });
+      stateRef.current = updated;
+      setSession(updated);
+      setAnnouncement(t("control.documentDescriptionSaved"));
+    } catch {
+      setErrorMessage(t("control.documentDescriptionSaveFailed"));
+    } finally {
+      setSavingDocumentDescription(false);
     }
   }
 
@@ -568,6 +607,7 @@ export function AdminSessionControl() {
 
   return (
     <main
+      id="main-content"
       className={cn(
         "mx-auto w-full flex-1",
         distractionFree
@@ -575,11 +615,24 @@ export function AdminSessionControl() {
           : "max-w-7xl px-4 pt-4 pb-8 sm:px-6"
       )}
     >
+      <div aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
+      {errorMessage && !distractionFree && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive"
+        >
+          {errorMessage}
+        </div>
+      )}
       <input
         ref={pdfInput}
         type="file"
         accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,image/avif"
         className="hidden"
+        aria-label={t("control.addPdf")}
+        tabIndex={-1}
         onChange={changePdf}
       />
 
@@ -636,26 +689,34 @@ export function AdminSessionControl() {
               )}
             >
               {session.pdfUrl ? (
-                <PdfViewer
-                  key={session.pdfUrl}
-                  ref={viewerRef}
-                  fileUrl={session.pdfUrl}
-                  backgroundMode={session.backgroundMode}
-                  flush={!distractionFree}
-                  edgeToEdge={distractionFree}
-                  visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
-                  onUserScroll={(progress) => {
-                    if (stateRef.current?.playing) return;
-                    if (stateRef.current?.playbackMode === "page") {
-                      const page = viewerRef.current?.getCurrentPage() ?? 1;
-                      setUiProgress(getPlaybackDisplayProgress("page", progress, page, numPages));
-                      return;
-                    }
-                    liveProgressRef.current = progress;
-                    setUiProgress(progress);
-                  }}
-                  onDocumentLoad={setNumPages}
-                />
+                <>
+                  <p id="admin-document-description" className="sr-only">
+                    {session.documentDescription || t("viewer.documentDescriptionFallback")}
+                  </p>
+                  <PdfViewer
+                    key={session.pdfUrl}
+                    ref={viewerRef}
+                    fileUrl={session.pdfUrl}
+                    documentDescription={session.documentDescription}
+                    regionLabel={t("control.documentRegionLabel", { title: session.title })}
+                    describedById="admin-document-description"
+                    backgroundMode={session.backgroundMode}
+                    flush={!distractionFree}
+                    edgeToEdge={distractionFree}
+                    visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
+                    onUserScroll={(progress) => {
+                      if (stateRef.current?.playing) return;
+                      if (stateRef.current?.playbackMode === "page") {
+                        const page = viewerRef.current?.getCurrentPage() ?? 1;
+                        setUiProgress(getPlaybackDisplayProgress("page", progress, page, numPages));
+                        return;
+                      }
+                      liveProgressRef.current = progress;
+                      setUiProgress(progress);
+                    }}
+                    onDocumentLoad={setNumPages}
+                  />
+                </>
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
                   <FileWarning className="size-7" />
@@ -812,8 +873,10 @@ export function AdminSessionControl() {
               onSeekToMarker={seekToMarker}
               onSetPlaybackMode={setPlaybackMode}
               onSetBackgroundMode={setBackgroundMode}
+              onUpdateDocumentDescription={updateDocumentDescription}
               onShortcutBindingChange={handleShortcutBindingChange}
               onShortcutPresetChange={handleShortcutPresetChange}
+              savingDocumentDescription={savingDocumentDescription}
               shortcutBindings={shortcutBindings}
               shortcutPreset={shortcutPreset}
             />
@@ -841,6 +904,13 @@ export function AdminSessionControl() {
         >
           <Maximize className="size-5" />
         </button>
+      )}
+      {session.pdfUrl && (
+        <DocumentAccessLink
+          href={session.pdfUrl}
+          inverse={fullscreenBlackBackground}
+          className={cn(!distractionFree && "left-4 bottom-16")}
+        />
       )}
     </main>
   );

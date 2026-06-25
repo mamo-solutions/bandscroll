@@ -45,6 +45,9 @@ export type PdfViewerHandle = {
 
 type Props = {
   fileUrl: string;
+  documentDescription?: string;
+  regionLabel?: string;
+  describedById?: string;
   backgroundMode?: SessionBackgroundMode;
   edgeToEdge?: boolean;
   flush?: boolean;
@@ -62,6 +65,9 @@ type Props = {
 export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   {
     fileUrl,
+    documentDescription,
+    regionLabel,
+    describedById,
     backgroundMode = "light",
     edgeToEdge = false,
     flush = false,
@@ -240,6 +246,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     if (!el) return;
     const prevent = (e: Event) => e.preventDefault();
     const preventKey = (e: KeyboardEvent) => {
+      if (document.activeElement !== el) return;
       if (
         ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", " ", "Spacebar"].includes(
           e.key
@@ -250,11 +257,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     };
     el.addEventListener("wheel", prevent, { passive: false });
     el.addEventListener("touchmove", prevent, { passive: false });
-    window.addEventListener("keydown", preventKey);
+    el.addEventListener("keydown", preventKey);
     return () => {
       el.removeEventListener("wheel", prevent);
       el.removeEventListener("touchmove", prevent);
-      window.removeEventListener("keydown", preventKey);
+      el.removeEventListener("keydown", preventKey);
     };
   }, [blockUserScroll]);
 
@@ -282,6 +289,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   return (
     <div
+      role={regionLabel ? "region" : undefined}
+      aria-label={regionLabel}
+      aria-describedby={describedById}
       className={cn(
         "relative h-full",
         backgroundMode === "black" ? "bg-black" : "bg-muted/40",
@@ -290,6 +300,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           : "scrollbar-warm overflow-y-auto"
       )}
       ref={scrollRef}
+      tabIndex={blockUserScroll ? 0 : undefined}
       onScroll={handleScroll}
     >
       {error ? (
@@ -324,7 +335,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           >
             <img
               src={fileUrl}
-              alt=""
+              alt={documentDescription ?? ""}
               style={{ width: displayWidth }}
               onLoad={() => {
                 setNumPages(1);

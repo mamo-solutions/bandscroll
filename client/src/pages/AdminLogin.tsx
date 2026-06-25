@@ -10,7 +10,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
@@ -40,13 +39,16 @@ export function AdminLogin() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-12 sm:py-20">
+    <main
+      id="main-content"
+      className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-12 sm:py-20"
+    >
       <Card className="shadow-[var(--shadow-lift)]">
         <CardHeader className="items-center text-center">
           <span className="mb-1 flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
             <Lock className="size-6" />
           </span>
-          <CardTitle className="text-2xl">{t("login.title")}</CardTitle>
+          <h1 className="font-heading text-2xl font-semibold">{t("login.title")}</h1>
           <CardDescription>{t("login.desc")}</CardDescription>
         </CardHeader>
         <CardContent>

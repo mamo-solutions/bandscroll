@@ -9,6 +9,7 @@ import {
   OctagonX,
 } from "lucide-react";
 import { api } from "@/api/client";
+import { DocumentAccessLink } from "@/components/DocumentAccessLink";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { Footer } from "@/components/Footer";
@@ -286,22 +287,40 @@ export function SessionViewer() {
   const showConnectionBanner =
     connectionPhase === "disconnected" ||
     (connectionPhase === "syncing" && session !== null);
+  const connectionAnnouncement =
+    ended
+      ? t("viewer.endedBanner")
+      : connectionPhase === "disconnected"
+        ? t("viewer.reconnecting")
+        : connectionPhase === "syncing" && session !== null
+          ? t("viewer.syncing")
+          : connectionPhase === "connected" && session !== null
+            ? t("viewer.syncComplete")
+            : "";
 
   return (
-    <div
+    <main
+      id="main-content"
+      aria-labelledby="session-viewer-title"
       className={cn(
         "flex h-dvh flex-col overflow-hidden",
         blackBackground ? "bg-black text-white" : "bg-muted/40"
       )}
     >
-      {!distractionFree && (
+      <h1 id="session-viewer-title" className="sr-only">
+        {session?.title ?? t("viewer.loading")}
+      </h1>
+      <div aria-live="polite" className="sr-only">
+        {connectionAnnouncement}
+      </div>
+
+      {!distractionFree && !chromeHidden && (
         <header
           className={cn(
-            "absolute inset-x-0 top-0 z-20 pt-[env(safe-area-inset-top)] transition-transform duration-300 ease-out",
+            "absolute inset-x-0 top-0 z-20 pt-[env(safe-area-inset-top)]",
             blackBackground
               ? "border-b border-white/10 bg-black/96 text-white backdrop-blur-none"
-              : "border-b border-border/60 bg-background/85 backdrop-blur-md",
-            chromeHidden && "-translate-y-full"
+              : "border-b border-border/60 bg-background/85 backdrop-blur-md"
           )}
         >
           <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-3 sm:px-6">
@@ -328,7 +347,15 @@ export function SessionViewer() {
             <ConnectionStatus playing={session?.playing} phase={connectionPhase} />
           </div>
 
-          <div className={cn("h-1 w-full", blackBackground ? "bg-white/10" : "bg-muted")}>
+          <div
+            role="progressbar"
+            aria-label={t("controls.positionAria")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(uiProgress * 100)}
+            aria-valuetext={`${Math.round(uiProgress * 100)}%`}
+            className={cn("h-1 w-full", blackBackground ? "bg-white/10" : "bg-muted")}
+          >
             <div
               className="h-full bg-primary transition-[width] duration-200 ease-linear"
               style={{ width: `${Math.round(uiProgress * 100)}%` }}
@@ -338,7 +365,14 @@ export function SessionViewer() {
       )}
 
       {!distractionFree && (ended || showConnectionBanner) && (
-        <div className="absolute inset-x-0 top-[calc(3.75rem+env(safe-area-inset-top))] z-30 mx-auto w-full max-w-6xl px-3 sm:px-6">
+        <div
+          className={cn(
+            "absolute inset-x-0 z-30 mx-auto w-full max-w-6xl px-3 sm:px-6",
+            chromeHidden
+              ? "top-[calc(env(safe-area-inset-top)+0.75rem)]"
+              : "top-[calc(3.75rem+env(safe-area-inset-top))]"
+          )}
+        >
           {ended && (
             <Banner tone="muted" icon={<OctagonX className="size-4" />}>
               {t("viewer.endedBanner")}
@@ -366,16 +400,24 @@ export function SessionViewer() {
           )}
         >
           {pdfUrl ? (
-            <PdfViewer
-              key={pdfUrl}
-              ref={viewerRef}
-              fileUrl={pdfUrl}
-              backgroundMode={session?.backgroundMode ?? "light"}
-              edgeToEdge={distractionFree}
-              visiblePage={pageMode ? session.currentPage : undefined}
-              blockUserScroll
-              onDocumentLoad={setNumPages}
-            />
+            <>
+              <p id="session-document-description" className="sr-only">
+                {session?.documentDescription || t("viewer.documentDescriptionFallback")}
+              </p>
+              <PdfViewer
+                key={pdfUrl}
+                ref={viewerRef}
+                fileUrl={pdfUrl}
+                documentDescription={session?.documentDescription}
+                regionLabel={t("viewer.documentRegionLabel", { title: session?.title ?? code })}
+                describedById="session-document-description"
+                backgroundMode={session?.backgroundMode ?? "light"}
+                edgeToEdge={distractionFree}
+                visiblePage={pageMode ? session.currentPage : undefined}
+                blockUserScroll
+                onDocumentLoad={setNumPages}
+              />
+            </>
           ) : (
             <div
               className={cn(
@@ -390,6 +432,7 @@ export function SessionViewer() {
       </div>
 
       {!distractionFree && !chromeHidden && <Footer inverse={blackBackground} />}
+      {pdfUrl && <DocumentAccessLink href={pdfUrl} inverse={blackBackground} className="bottom-4 left-4" />}
 
       {!distractionFree && (
         <button
@@ -417,7 +460,7 @@ export function SessionViewer() {
           <Maximize className="size-5" />
         </button>
       )}
-    </div>
+    </main>
   );
 }
 

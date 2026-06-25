@@ -22,7 +22,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -33,14 +32,18 @@ export function AdminDashboard() {
   const [sessions, setSessions] = useState<SessionState[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [documentDescription, setDocumentDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { t } = useI18n();
   useDocumentTitle(t("dash.title"));
+
+  const selectedFileIsImage = !!file?.type.startsWith("image/");
 
   const load = () =>
     api
@@ -56,21 +59,34 @@ export function AdminDashboard() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
+    if (selectedFileIsImage && !documentDescription.trim()) {
+      setError(t("dash.documentDescriptionRequired"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const session = await api.createSession({
         title: title.trim(),
         description: description.trim() || undefined,
+        documentDescription: documentDescription.trim() || undefined,
       });
-      if (file) await api.uploadPdf(session.id, file);
+      if (file) {
+        await api.uploadPdf(session.id, file, documentDescription.trim() || undefined);
+      }
       setTitle("");
       setDescription("");
+      setDocumentDescription("");
       setFile(null);
       if (fileInput.current) fileInput.current.value = "";
       await load();
+      setAnnouncement(t("dash.sessionCreatedAnnouncement", { title: session.title }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("dash.createError"));
+      if (err instanceof ApiError && err.message === "document-description-required") {
+        setError(t("dash.documentDescriptionRequired"));
+      } else {
+        setError(err instanceof ApiError ? err.message : t("dash.createError"));
+      }
     } finally {
       setBusy(false);
     }
@@ -85,6 +101,7 @@ export function AdminDashboard() {
       return;
     }
     setCopiedId(id);
+    setAnnouncement(t("dash.linkCopiedAnnouncement", { code }));
     setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1600);
   }
 
@@ -104,7 +121,10 @@ export function AdminDashboard() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+    <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+      <div aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
       <AdminNav
         title={t("dash.title")}
         subtitle={t(
@@ -117,10 +137,10 @@ export function AdminDashboard() {
       {/* Create */}
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-semibold leading-tight">
             <Plus className="size-5 text-primary" />
             {t("dash.newSession")}
-          </CardTitle>
+          </h2>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-2">
@@ -152,10 +172,32 @@ export function AdminDashboard() {
                 ref={fileInput}
                 type="file"
                 accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,image/avif"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const nextFile = e.target.files?.[0] ?? null;
+                  setFile(nextFile);
+                  if (!nextFile?.type.startsWith("image/")) return;
+                  if (!documentDescription.trim()) {
+                    setAnnouncement(t("dash.documentDescriptionPrompt"));
+                  }
+                }}
               />
               <p className="text-xs text-muted-foreground">
                 {t("dash.uploadHint")}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="documentDescription">{t("dash.documentDescriptionLabel")}</Label>
+              <Input
+                id="documentDescription"
+                value={documentDescription}
+                onChange={(e) => setDocumentDescription(e.target.value)}
+                placeholder={t("dash.documentDescriptionPlaceholder")}
+                aria-describedby="document-description-hint"
+              />
+              <p id="document-description-hint" className="text-xs text-muted-foreground">
+                {selectedFileIsImage
+                  ? t("dash.documentDescriptionHintRequired")
+                  : t("dash.documentDescriptionHint")}
               </p>
             </div>
 

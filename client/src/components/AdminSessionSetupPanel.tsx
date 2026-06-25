@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FileEdit,
   FileUp,
@@ -15,7 +15,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -44,12 +43,14 @@ type Props = {
   onSeekToMarker: (page: number) => void;
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
   onSetBackgroundMode: (backgroundMode: SessionBackgroundMode) => void;
+  onUpdateDocumentDescription: (documentDescription: string) => Promise<void>;
   onShortcutBindingChange: (slot: AdminShortcutSlot, code: string) => void;
   onShortcutPresetChange: (
     presetId: Exclude<AdminShortcutPresetId, "custom">,
   ) => void;
   shortcutBindings: AdminShortcutBindings;
   shortcutPreset: AdminShortcutPresetId;
+  savingDocumentDescription: boolean;
 };
 
 export function AdminSessionSetupPanel({
@@ -62,14 +63,19 @@ export function AdminSessionSetupPanel({
   onSeekToMarker,
   onSetPlaybackMode,
   onSetBackgroundMode,
+  onUpdateDocumentDescription,
   onShortcutBindingChange,
   onShortcutPresetChange,
   shortcutBindings,
   shortcutPreset,
+  savingDocumentDescription,
 }: Props) {
   const { t } = useI18n();
   const [markerTitle, setMarkerTitle] = useState("");
   const [markerPage, setMarkerPage] = useState("");
+  const [documentDescription, setDocumentDescription] = useState(
+    session.documentDescription ?? ""
+  );
   const shortcutFields: ReadonlyArray<{
     slot: AdminShortcutSlot;
     label: string;
@@ -98,17 +104,24 @@ export function AdminSessionSetupPanel({
     { slot: "nextMarker", label: t("control.shortcutNextMarker") },
     { slot: "stop", label: t("control.shortcutStop") },
   ];
+  const selectedDocumentIsImage = !!session.pdfUrl && /\.(png|jpe?g|webp|gif|avif)$/i.test(session.pdfUrl);
+
+  useEffect(() => {
+    setDocumentDescription(session.documentDescription ?? "");
+  }, [session.documentDescription]);
 
   return (
     <div className="flex flex-col gap-4">
       <Card className="overflow-hidden border-border/80 bg-card/95">
         <CardHeader className="gap-3 border-b border-border/70 bg-linear-to-r from-secondary/75 via-card to-accent/45">
-          <div>
             <div>
-              <CardTitle>{t("control.setupTitle")}</CardTitle>
-              <CardDescription>{t("control.setupDesc")}</CardDescription>
+              <div>
+                <h2 className="font-heading text-lg font-semibold leading-tight">
+                  {t("control.setupTitle")}
+                </h2>
+                <CardDescription>{t("control.setupDesc")}</CardDescription>
+              </div>
             </div>
-          </div>
         </CardHeader>
 
         <CardContent className="flex flex-col gap-5 pt-4">
@@ -159,16 +172,44 @@ export function AdminSessionSetupPanel({
                 ? t("control.uploading")
                 : session.pdfUrl
                   ? t("control.changePdf")
-                  : t("control.addPdf")}
+                : t("control.addPdf")}
             </Button>
+
+            <div className="mt-4 flex flex-col gap-2">
+              <label
+                htmlFor="document-description"
+                className="text-sm font-medium text-foreground"
+              >
+                {t("control.documentDescriptionLabel")}
+              </label>
+              <Input
+                id="document-description"
+                value={documentDescription}
+                onChange={(e) => setDocumentDescription(e.target.value)}
+                placeholder={t("control.documentDescriptionPlaceholder")}
+                aria-describedby="document-description-note"
+              />
+              <p id="document-description-note" className="text-xs text-muted-foreground">
+                {selectedDocumentIsImage
+                  ? t("control.documentDescriptionHintRequired")
+                  : t("control.documentDescriptionHint")}
+              </p>
+              <Button
+                variant="secondary"
+                disabled={savingDocumentDescription}
+                onClick={() => onUpdateDocumentDescription(documentDescription)}
+              >
+                {savingDocumentDescription ? t("common.saving") : t("common.save")}
+              </Button>
+            </div>
           </section>
 
-          <section className="rounded-xl border border-border/70 bg-muted/35 p-4">
+          <fieldset className="rounded-xl border border-border/70 bg-muted/35 p-4">
+            <legend className="px-1 font-heading text-base font-semibold">
+              {t("controls.playbackMode")}
+            </legend>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-heading text-base font-semibold">
-                  {t("controls.playbackMode")}
-                </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {t("control.switchModeHint")}
                 </p>
@@ -181,6 +222,7 @@ export function AdminSessionSetupPanel({
                   key={mode}
                   type="button"
                   onClick={() => onSetPlaybackMode(mode)}
+                  aria-pressed={session.playbackMode === mode}
                   className={cn(
                     "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
                     session.playbackMode === mode
@@ -194,14 +236,14 @@ export function AdminSessionSetupPanel({
                 </button>
               ))}
             </div>
-          </section>
+          </fieldset>
 
-          <section className="rounded-xl border border-border/70 bg-muted/35 p-4">
+          <fieldset className="rounded-xl border border-border/70 bg-muted/35 p-4">
+            <legend className="px-1 font-heading text-base font-semibold">
+              {t("controls.sessionBackground")}
+            </legend>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-heading text-base font-semibold">
-                  {t("controls.sessionBackground")}
-                </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {t("control.backgroundHint")}
                 </p>
@@ -230,6 +272,7 @@ export function AdminSessionSetupPanel({
                   key={mode}
                   type="button"
                   onClick={() => onSetBackgroundMode(mode)}
+                  aria-pressed={session.backgroundMode === mode}
                   className={cn(
                     "rounded-xl border p-3 text-left transition-colors",
                     session.backgroundMode === mode
@@ -261,7 +304,7 @@ export function AdminSessionSetupPanel({
                 </button>
               ))}
             </div>
-          </section>
+          </fieldset>
 
           <section className="rounded-xl border border-border/70 bg-muted/35 p-4">
             <div className="flex items-start justify-between gap-3">
@@ -277,25 +320,35 @@ export function AdminSessionSetupPanel({
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto] xl:grid-cols-1">
-              <Input
-                id="markerTitle"
-                type="text"
-                value={markerTitle}
-                onChange={(e) => setMarkerTitle(e.target.value)}
-                placeholder={t("controls.markerTitlePlaceholder")}
-                disabled={numPages === 0}
-              />
-              <Input
-                id="markerPage"
-                type="number"
-                min={1}
-                max={numPages || 1}
-                inputMode="numeric"
-                value={markerPage}
-                onChange={(e) => setMarkerPage(e.target.value)}
-                placeholder={numPages > 0 ? `1-${numPages}` : "—"}
-                disabled={numPages === 0}
-              />
+              <div className="flex flex-col gap-2">
+                <label htmlFor="markerTitle" className="text-sm font-medium text-foreground">
+                  {t("controls.markerTitle")}
+                </label>
+                <Input
+                  id="markerTitle"
+                  type="text"
+                  value={markerTitle}
+                  onChange={(e) => setMarkerTitle(e.target.value)}
+                  placeholder={t("controls.markerTitlePlaceholder")}
+                  disabled={numPages === 0}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label htmlFor="markerPage" className="text-sm font-medium text-foreground">
+                  {t("controls.markerPage")}
+                </label>
+                <Input
+                  id="markerPage"
+                  type="number"
+                  min={1}
+                  max={numPages || 1}
+                  inputMode="numeric"
+                  value={markerPage}
+                  onChange={(e) => setMarkerPage(e.target.value)}
+                  placeholder={numPages > 0 ? `1-${numPages}` : "—"}
+                  disabled={numPages === 0}
+                />
+              </div>
               <Button
                 variant="outline"
                 disabled={numPages === 0 || !markerTitle.trim() || !markerPage}
@@ -382,10 +435,14 @@ export function AdminSessionSetupPanel({
             <div className="border-t border-border/70 px-4 py-4">
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  <label
+                    htmlFor="shortcut-preset"
+                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                  >
                     {t("control.shortcutsPreset")}
                   </label>
                   <Select
+                    id="shortcut-preset"
                     value={shortcutPreset}
                     onChange={(e) => {
                       const value = e.target.value as AdminShortcutPresetId;
@@ -417,10 +474,14 @@ export function AdminSessionSetupPanel({
                       key={slot}
                       className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center sm:gap-3"
                     >
-                      <label className="text-sm font-medium text-foreground">
+                      <label
+                        htmlFor={`shortcut-${slot}`}
+                        className="text-sm font-medium text-foreground"
+                      >
                         {label}
                       </label>
                       <Select
+                        id={`shortcut-${slot}`}
                         value={shortcutBindings[slot]}
                         onChange={(e) =>
                           onShortcutBindingChange(slot, e.target.value)

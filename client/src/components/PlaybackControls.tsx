@@ -248,19 +248,24 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
         <div className="mt-5 border-t border-border/70 pt-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="font-heading text-base font-semibold">{t("controls.quickTempo")}</h3>
+              <h2 className="font-heading text-base font-semibold">{t("controls.quickTempo")}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{t("controls.quickTempoHint")}</p>
             </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-xl bg-muted p-1">
+            <div
+              role="group"
+              aria-label={t("controls.quickTempo")}
+              className="inline-flex rounded-xl bg-muted p-1"
+            >
               {SPEED_PRESETS.map((value, index) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => applySpeed(value)}
                   aria-label={`${t("controls.speed")} ${index + 1}`}
+                  aria-pressed={activePreset === value}
                   className={cn(
                     "w-10 rounded-lg py-2 text-sm font-semibold tabular-nums transition-colors",
                     activePreset === value
@@ -273,7 +278,11 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
               ))}
             </div>
 
-            <div className="inline-flex items-center gap-1 rounded-xl bg-muted p-1">
+            <div
+              role="group"
+              aria-label={t("controls.manualTempoHint")}
+              className="inline-flex items-center gap-1 rounded-xl bg-muted p-1"
+            >
               <Button
                 variant="ghost"
                 size="icon"
@@ -396,7 +405,11 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                 <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   {t("controls.beatsPerSong")}
                 </span>
-                <div className="inline-flex rounded-xl bg-muted p-1">
+                <div
+                  role="group"
+                  aria-label={t("controls.beatsPerSong")}
+                  className="inline-flex rounded-xl bg-muted p-1"
+                >
                   {BEATS_PRESETS.map(({ labelKey, value }) => (
                     <button
                       key={value}
@@ -404,6 +417,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                       onClick={() => setBeatsPerSong(value)}
                       disabled={numPages === 0}
                       title={t(labelKey)}
+                      aria-pressed={beatsPerSong === value}
                       className={cn(
                         "rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
                         beatsPerSong === value

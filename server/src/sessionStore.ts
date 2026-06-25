@@ -32,6 +32,7 @@ export function clampCurrentPage(value: number): number {
 export type CreateSessionInput = {
   title: string;
   description?: string;
+  documentDescription?: string;
   pdfUrl?: string;
 };
 
@@ -42,6 +43,7 @@ export function createSession(input: CreateSessionInput): SessionState {
     code: generateCode(),
     title: input.title.trim() || "Untitled Session",
     description: input.description?.trim() || undefined,
+    documentDescription: input.documentDescription?.trim() || undefined,
     pdfUrl: input.pdfUrl ?? "",
     status: "draft",
     playing: false,
@@ -90,6 +92,7 @@ export type SessionPatch = Partial<
     SessionState,
     | "title"
     | "description"
+    | "documentDescription"
     | "pdfUrl"
     | "status"
     | "playing"

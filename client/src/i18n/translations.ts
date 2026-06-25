@@ -9,6 +9,10 @@ export const LANGUAGES: { code: Lang; label: string }[] = [
 export const de = {
   "common.join": "Beitreten",
   "common.backToOverview": "Zur Übersicht",
+  "common.openOriginal": "Originaldokument öffnen",
+  "common.skipToContent": "Zum Inhalt springen",
+  "common.save": "Speichern",
+  "common.saving": "Speichert…",
 
   "footer.project": "ein {link} Projekt",
   "footer.hostSession": "Session hosten",
@@ -45,8 +49,12 @@ export const de = {
   "viewer.endedBanner": "Diese Session wurde vom Host beendet.",
   "viewer.reconnecting": "Verbindung verloren – versuche neu zu verbinden…",
   "viewer.syncing": "Verbunden – gleiche den aktuellen Stand ab…",
+  "viewer.syncComplete": "Synchronisierung abgeschlossen.",
   "viewer.noPdf":
     "Der Host hat noch kein PDF hinterlegt. Sobald es bereitsteht, erscheint es automatisch.",
+  "viewer.documentDescriptionFallback":
+    "Öffne das Originaldokument, um den Inhalt mit assistiver Technologie zugänglich zu nutzen.",
+  "viewer.documentRegionLabel": "Session-Dokument: {title}",
 
   "login.title": "Host-Anmeldung",
   "login.desc": "Geschützter Bereich für Dirigent:innen und Hosts.",
@@ -73,6 +81,17 @@ export const de = {
   "dash.uploadPdf": "Datei hochladen",
   "dash.uploadHint":
     "Optional, PDF oder Bild, max. 50 MB. Kann auch später hinzugefügt werden.",
+  "dash.documentDescriptionLabel": "Dokumentbeschreibung",
+  "dash.documentDescriptionPlaceholder":
+    "Kurze Beschreibung des Dokuments für Screenreader",
+  "dash.documentDescriptionHint":
+    "Optional für PDFs, empfohlen für alle Dateien mit wichtigen visuellen Inhalten.",
+  "dash.documentDescriptionHintRequired":
+    "Für Bilddateien ist diese Beschreibung erforderlich, damit Screenreader den Inhalt einordnen können.",
+  "dash.documentDescriptionRequired":
+    "Für Bilddateien ist eine Dokumentbeschreibung erforderlich.",
+  "dash.documentDescriptionPrompt":
+    "Füge eine Dokumentbeschreibung hinzu, bevor du ein Bild hochlädst.",
   "dash.create": "Session erstellen",
   "dash.creating": "Erstelle…",
   "dash.createError": "Fehler beim Erstellen",
@@ -83,6 +102,8 @@ export const de = {
   "dash.control": "Steuern",
   "dash.link": "Link",
   "dash.copied": "Kopiert",
+  "dash.linkCopiedAnnouncement": "Öffentlicher Link für {code} kopiert.",
+  "dash.sessionCreatedAnnouncement": "Session {title} wurde erstellt.",
   "dash.end": "Beenden",
   "dash.deleteAria": "Session löschen",
   "dash.lock": "Session sperren",
@@ -145,6 +166,8 @@ export const de = {
   "control.changePdf": "Datei wechseln",
   "control.addPdf": "Datei hinzufügen",
   "control.uploading": "Lädt hoch…",
+  "control.uploadFailed": "Datei konnte nicht hochgeladen werden.",
+  "control.uploadCompleteAnnouncement": "Datei erfolgreich hochgeladen.",
   "control.disconnected": "Verbindung verloren. Lade die Seite neu, um sie wieder zu steuern.",
   "control.reload": "Neu laden",
   "control.showUi": "Bedienung anzeigen",
@@ -160,6 +183,19 @@ export const de = {
   "control.documentMissing": "Noch keine Datei verbunden. Füge eine PDF oder ein Bild hinzu.",
   "control.documentReadyShort": "Datei bereit",
   "control.documentMissingShort": "Keine Datei",
+  "control.documentDescriptionLabel": "Dokumentbeschreibung",
+  "control.documentDescriptionPlaceholder":
+    "Kurze Beschreibung des Dokuments für Screenreader",
+  "control.documentDescriptionHint":
+    "Optional für PDFs, empfohlen für visuelle Informationen, die nicht im Text enthalten sind.",
+  "control.documentDescriptionHintRequired":
+    "Wenn du ein Bild verwendest, ist diese Beschreibung für Screenreader erforderlich.",
+  "control.documentDescriptionRequired":
+    "Für Bilddateien ist eine Dokumentbeschreibung erforderlich.",
+  "control.documentDescriptionSaved": "Dokumentbeschreibung gespeichert.",
+  "control.documentDescriptionSaveFailed":
+    "Dokumentbeschreibung konnte nicht gespeichert werden.",
+  "control.documentRegionLabel": "Vorschau des Dokuments für {title}",
   "control.switchModeHint": "Wähle kontinuierliches Scrollen oder klare Seitenwechsel.",
   "control.backgroundHint":
     "Lege fest, ob die Partitur in der Session auf hellem oder schwarzem Hintergrund angezeigt wird.",
@@ -192,6 +228,10 @@ export type TKey = keyof typeof de;
 export const en: Record<TKey, string> = {
   "common.join": "Join",
   "common.backToOverview": "Back to overview",
+  "common.openOriginal": "Open original document",
+  "common.skipToContent": "Skip to content",
+  "common.save": "Save",
+  "common.saving": "Saving…",
 
   "footer.project": "a {link} project",
   "footer.hostSession": "Host a session",
@@ -228,8 +268,12 @@ export const en: Record<TKey, string> = {
   "viewer.endedBanner": "This session was ended by the host.",
   "viewer.reconnecting": "Connection lost – trying to reconnect…",
   "viewer.syncing": "Connected – syncing the latest position…",
+  "viewer.syncComplete": "Sync complete.",
   "viewer.noPdf":
     "The host hasn't added a PDF yet. It will appear automatically once it's ready.",
+  "viewer.documentDescriptionFallback":
+    "Open the original document to access its contents with assistive technology.",
+  "viewer.documentRegionLabel": "Session document: {title}",
 
   "login.title": "Host login",
   "login.desc": "Protected area for conductors and hosts.",
@@ -255,6 +299,15 @@ export const en: Record<TKey, string> = {
   "dash.optional": "Optional",
   "dash.uploadPdf": "Upload file",
   "dash.uploadHint": "Optional, PDF or image, max. 50 MB. Can be added later too.",
+  "dash.documentDescriptionLabel": "Document description",
+  "dash.documentDescriptionPlaceholder":
+    "Short description of the document for screen readers",
+  "dash.documentDescriptionHint":
+    "Optional for PDFs, recommended for any file with important visual content.",
+  "dash.documentDescriptionHintRequired":
+    "This description is required for image uploads so screen readers can understand the content.",
+  "dash.documentDescriptionRequired": "A document description is required for image uploads.",
+  "dash.documentDescriptionPrompt": "Add a document description before uploading an image.",
   "dash.create": "Create session",
   "dash.creating": "Creating…",
   "dash.createError": "Could not create session",
@@ -265,6 +318,8 @@ export const en: Record<TKey, string> = {
   "dash.control": "Control",
   "dash.link": "Link",
   "dash.copied": "Copied",
+  "dash.linkCopiedAnnouncement": "Copied public link for {code}.",
+  "dash.sessionCreatedAnnouncement": "Created session {title}.",
   "dash.end": "End",
   "dash.deleteAria": "Delete session",
   "dash.lock": "Lock session",
@@ -326,6 +381,8 @@ export const en: Record<TKey, string> = {
   "control.changePdf": "Change file",
   "control.addPdf": "Add file",
   "control.uploading": "Uploading…",
+  "control.uploadFailed": "Could not upload the file.",
+  "control.uploadCompleteAnnouncement": "File uploaded successfully.",
   "control.disconnected": "Connection lost. Reload the page to regain control.",
   "control.reload": "Reload",
   "control.showUi": "Show controls",
@@ -341,6 +398,19 @@ export const en: Record<TKey, string> = {
   "control.documentMissing": "No file attached yet. Add a PDF or image to begin.",
   "control.documentReadyShort": "File ready",
   "control.documentMissingShort": "No file",
+  "control.documentDescriptionLabel": "Document description",
+  "control.documentDescriptionPlaceholder":
+    "Short description of the document for screen readers",
+  "control.documentDescriptionHint":
+    "Optional for PDFs, recommended for visual details that are not already available as text.",
+  "control.documentDescriptionHintRequired":
+    "When you use an image, this description is required for screen readers.",
+  "control.documentDescriptionRequired":
+    "A document description is required for image uploads.",
+  "control.documentDescriptionSaved": "Document description saved.",
+  "control.documentDescriptionSaveFailed":
+    "Could not save the document description.",
+  "control.documentRegionLabel": "Document preview for {title}",
   "control.switchModeHint": "Choose continuous scroll or clear page-by-page cues.",
   "control.backgroundHint":
     "Choose whether the score is shown on a light or black background during the session.",

@@ -2,9 +2,11 @@ import { Link, Outlet } from "react-router-dom";
 import { AudioLines } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { useHeaderSlot } from "@/components/HeaderSlot";
+import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
 
 export function Layout() {
+  const { t } = useI18n();
   const {
     node: headerNode,
     hidden: headerHidden,
@@ -13,6 +15,12 @@ export function Layout() {
 
   return (
     <div className="flex min-h-dvh flex-col">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow-[var(--shadow-lift)]"
+      >
+        {t("common.skipToContent")}
+      </a>
       <header
         className={cn(
           "sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-md",

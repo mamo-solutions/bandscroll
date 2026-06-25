@@ -31,9 +31,9 @@
   --accent: #f6e0cf; /* warm peach highlight */
   --accent-foreground: #6f5347;
 
-  --success: #4f7a4d; /* sage — live / playing */
+  --success: #446b42; /* sage — live / playing */
   --success-foreground: #ffffff;
-  --warning: #b5792a; /* amber — paused */
+  --warning: #865414; /* amber — paused */
   --warning-foreground: #ffffff;
   --destructive: #c0492f;
   --destructive-foreground: #fff7f4;

@@ -57,6 +57,7 @@ describe("createSession", () => {
     expect(s.id).toBeTruthy();
     expect(s.title).toBe("My Set");
     expect(s.description).toBeUndefined();
+    expect(s.documentDescription).toBeUndefined();
     expect(s.status).toBe("draft");
     expect(s.playing).toBe(false);
     expect(s.progress).toBe(0);
@@ -87,10 +88,17 @@ describe("createSession", () => {
     expect(ids.size).toBe(50);
   });
 
-  it("trims title/description and falls back for empty title", () => {
-    const s = track(createSession({ title: "  Padded  ", description: "  hi  " }));
+  it("trims title/description/documentDescription and falls back for empty title", () => {
+    const s = track(
+      createSession({
+        title: "  Padded  ",
+        description: "  hi  ",
+        documentDescription: "  readable image  ",
+      })
+    );
     expect(s.title).toBe("Padded");
     expect(s.description).toBe("hi");
+    expect(s.documentDescription).toBe("readable image");
 
     const blank = track(createSession({ title: "   " }));
     expect(blank.title).toBe("Untitled Session");

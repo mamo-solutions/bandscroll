@@ -41,14 +41,29 @@ export const api = {
   adminSessions: () => request<SessionState[]>("/api/admin/sessions"),
   adminSession: (id: string) =>
     request<SessionState>(`/api/admin/sessions/${id}`),
-  createSession: (data: { title: string; description?: string }) =>
+  createSession: (data: {
+    title: string;
+    description?: string;
+    documentDescription?: string;
+  }) =>
     request<SessionState>("/api/admin/sessions", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  uploadPdf: (id: string, file: File) => {
+  updateSessionDetails: (
+    id: string,
+    data: { title?: string; description?: string; documentDescription?: string }
+  ) =>
+    request<SessionState>(`/api/admin/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  uploadPdf: (id: string, file: File, documentDescription?: string) => {
     const form = new FormData();
     form.append("pdf", file);
+    if (documentDescription !== undefined) {
+      form.append("documentDescription", documentDescription);
+    }
     return request<SessionState>(`/api/admin/sessions/${id}/pdf`, {
       method: "POST",
       body: form,

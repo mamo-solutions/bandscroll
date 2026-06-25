@@ -37,11 +37,15 @@ async function login(): Promise<string> {
   return res.headers.getSetCookie()[0].split(";")[0];
 }
 
-async function createSession(cookie: string, title = "Integration") {
+async function createSession(
+  cookie: string,
+  title = "Integration",
+  extraBody?: Record<string, unknown>
+) {
   const res = await fetch(`${base}/api/admin/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, ...extraBody }),
   });
   return { status: res.status, body: await json(res) };
 }
@@ -129,6 +133,7 @@ describe("REST API", () => {
     expect(body.backgroundMode).toBe("light");
     expect(body.currentPage).toBe(1);
     expect(body.numPages).toBe(0);
+    expect(body.documentDescription).toBeUndefined();
 
     // Newly created (draft) session is immediately public.
     const pub = await json(await fetch(`${base}/api/sessions/public`));
@@ -178,7 +183,9 @@ describe("REST API", () => {
 
   it("accepts an image upload and stores it with the right extension", async () => {
     const cookie = await login();
-    const { body } = await createSession(cookie);
+    const { body } = await createSession(cookie, "Image upload", {
+      documentDescription: "Lead sheet cover image",
+    });
 
     const form = new FormData();
     form.append(
@@ -186,6 +193,7 @@ describe("REST API", () => {
       new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])], { type: "image/png" }),
       "score.png"
     );
+    form.append("documentDescription", "Lead sheet cover image");
     const updated = await json(
       await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
         method: "POST",
@@ -194,6 +202,26 @@ describe("REST API", () => {
       })
     );
     expect(updated.pdfUrl).toMatch(/^\/uploads\/.+\.png$/);
+    expect(updated.documentDescription).toBe("Lead sheet cover image");
+  });
+
+  it("rejects an image upload without a document description", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie);
+
+    const form = new FormData();
+    form.append(
+      "pdf",
+      new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])], { type: "image/png" }),
+      "score.png"
+    );
+    const res = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: form,
+    });
+    expect(res.status).toBe(400);
+    expect((await json(res)).error).toBe("document-description-required");
   });
 });
 

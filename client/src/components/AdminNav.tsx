@@ -36,12 +36,24 @@ export function AdminNav({
       )}
       <div className={cn("flex shrink-0 items-center gap-2", !title && "ml-auto")}>
         {showDashboard && (
-          <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/admin")}
+            aria-label={t("nav.dashboard")}
+            title={t("nav.dashboard")}
+          >
             <LayoutDashboard />
             <span className="hidden sm:inline">{t("nav.dashboard")}</span>
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={handleLogout}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          aria-label={t("nav.logout")}
+          title={t("nav.logout")}
+        >
           <LogOut />
           <span className="hidden sm:inline">{t("nav.logout")}</span>
         </Button>

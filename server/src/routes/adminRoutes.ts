@@ -66,6 +66,12 @@ const RATE_MAX_UPLOADS = 10;
 
 const uploadCounts = new Map<string, { count: number; resetAt: number }>();
 
+function normalizeOptionalText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 function rateLimitUpload(req: Request, res: Response, next: NextFunction): void {
   const key = req.sessionID ?? req.ip;
   const now = Date.now();
@@ -125,10 +131,43 @@ adminRouter.post("/sessions", (req, res) => {
   }
   const session = createSession({
     title,
-    description: req.body?.description ? String(req.body.description) : undefined,
+    description: normalizeOptionalText(req.body?.description),
+    documentDescription: normalizeOptionalText(req.body?.documentDescription),
   });
   broadcastSessionListUpdated();
   res.status(201).json(session);
+});
+
+adminRouter.patch("/sessions/:id", (req, res) => {
+  const session = getSessionById(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: "session-not-found" });
+    return;
+  }
+
+  const patch: {
+    title?: string;
+    description?: string;
+    documentDescription?: string;
+  } = {};
+  if (typeof req.body?.title === "string") {
+    patch.title = String(req.body.title).trim() || session.title;
+  }
+  if (req.body && "description" in req.body) {
+    patch.description = normalizeOptionalText(req.body.description);
+  }
+  if (req.body && "documentDescription" in req.body) {
+    patch.documentDescription = normalizeOptionalText(req.body.documentDescription);
+  }
+
+  const updated = updateSessionState(session.id, patch);
+  if (!updated) {
+    res.status(404).json({ error: "session-not-found" });
+    return;
+  }
+  broadcastSessionState(updated);
+  broadcastSessionListUpdated();
+  res.json(updated);
 });
 
 adminRouter.get("/sessions/:id", (req, res) => {
@@ -165,17 +204,31 @@ adminRouter.post(
       res.status(400).json({ error: "pdf-content-mismatch" });
       return;
     }
+    const documentDescription = normalizeOptionalText(req.body?.documentDescription);
+    if (req.file.mimetype.startsWith("image/") && !documentDescription) {
+      try {
+        unlinkSync(req.file.path);
+      } catch (err) {
+        logger.warn("upload cleanup failed", { path: req.file.path, err });
+      }
+      res.status(400).json({ error: "document-description-required" });
+      return;
+    }
     const pdfUrl = `/uploads/${req.file.filename}`;
     const oldPdfUrl = session.pdfUrl;
     // A new document means a new song: reset to the top and pause so viewers
     // don't keep extrapolating the previous song's scroll position.
-    const updated = updateSessionState(session.id, {
+    const patch: Parameters<typeof updateSessionState>[1] = {
       pdfUrl,
       progress: 0,
       currentPage: 1,
       numPages: 0,
       playing: false,
-    });
+    };
+    if (documentDescription !== undefined || req.file.mimetype.startsWith("image/")) {
+      patch.documentDescription = documentDescription;
+    }
+    const updated = updateSessionState(session.id, patch);
     if (updated) {
       broadcastSessionState(updated);
       broadcastSessionListUpdated();

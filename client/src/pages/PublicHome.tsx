@@ -40,8 +40,8 @@ export function PublicHome() {
     if (trimmed) navigate(`/session/${trimmed}`);
   }
 
-  return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
+    return (
+    <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
       {/* Hero + single primary action: join */}
       <section className="mx-auto mb-10 max-w-2xl text-center sm:mb-14">
         <h1 className="text-balance font-heading text-3xl font-bold tracking-tight sm:text-4xl">
@@ -58,6 +58,7 @@ export function PublicHome() {
           <div className="relative flex-1">
             <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              id="session-code"
               inputMode="text"
               autoCapitalize="characters"
               placeholder={t("home.codePlaceholder")}

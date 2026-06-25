@@ -13,6 +13,7 @@ export type SessionState = {
   code: string;
   title: string;
   description?: string;
+  documentDescription?: string;
   pdfUrl: string;
   status: SessionStatus;
   playing: boolean;
