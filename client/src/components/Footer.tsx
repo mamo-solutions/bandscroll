@@ -55,7 +55,7 @@ export function Footer({ inverse = false, className }: FooterProps) {
           <a
             href="https://mamo.solutions"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener"
             className={cn(
               "font-medium underline-offset-4 hover:underline",
               inverse ? "text-white/78 hover:text-white" : "text-foreground/80 hover:text-foreground"
