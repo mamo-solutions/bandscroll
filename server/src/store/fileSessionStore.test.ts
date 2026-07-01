@@ -1,4 +1,4 @@
-import { rmSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, rmSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -119,5 +119,18 @@ describe("FileSessionStore", () => {
     expect(restored.currentPage).toBe(1);
     expect(restored.numPages).toBe(0);
     expect(restored.stateVersion).toBe(0);
+  });
+
+  it("rewrites a read-only session file via temp file replacement", () => {
+    const store = new FileSessionStore(dataDir);
+    const sessionPath = join(dataDir, "sessions.json");
+
+    store.set("a", makeSession({ id: "a" }));
+    chmodSync(sessionPath, 0o444);
+
+    expect(() => store.delete("a")).not.toThrow();
+
+    const reloaded = new FileSessionStore(dataDir);
+    expect(reloaded.get("a")).toBeUndefined();
   });
 });

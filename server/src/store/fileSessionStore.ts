@@ -1,5 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { SessionState } from "../types.js";
 import type { SessionStoreAdapter } from "./sessionStoreAdapter.js";
 import { logger } from "../lib/logger.js";
@@ -52,10 +59,19 @@ export class FileSessionStore implements SessionStoreAdapter {
   }
 
   private save(): void {
-    writeFileSync(
-      this.filePath,
-      JSON.stringify([...this.sessions.values()], null, 2)
+    const payload = JSON.stringify([...this.sessions.values()], null, 2);
+    const tempPath = resolve(
+      dirname(this.filePath),
+      `sessions.${process.pid}.${Date.now()}.tmp`
     );
+
+    try {
+      writeFileSync(tempPath, payload);
+      renameSync(tempPath, this.filePath);
+    } catch (err) {
+      rmSync(tempPath, { force: true });
+      throw err;
+    }
   }
 
   get(id: string): SessionState | undefined {
