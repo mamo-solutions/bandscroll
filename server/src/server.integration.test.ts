@@ -1,8 +1,9 @@
 import type { AddressInfo } from "node:net";
 import type { Server as HttpServer } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { io, type Socket } from "socket.io-client";
 import { createAppServer } from "./app.js";
+import { resetLoginRateLimitState } from "./security/loginRateLimit.js";
 import { getIo } from "./sockets/socketServer.js";
 
 let httpServer: HttpServer;
@@ -14,13 +15,17 @@ beforeAll(async () => {
   ({ httpServer } = createAppServer());
   await new Promise<void>((resolve) => httpServer.listen(0, resolve));
   const { port } = httpServer.address() as AddressInfo;
-  base = `http://127.0.0.1:${port}`;
+  base = `http://localhost:${port}`;
 });
 
 afterAll(async () => {
   // Closing the Socket.IO server force-disconnects clients and closes the
   // underlying HTTP server (httpServer.close() alone would hang on open sockets).
   await new Promise<void>((resolve) => getIo().close(() => resolve()));
+});
+
+beforeEach(() => {
+  resetLoginRateLimitState();
 });
 
 // ---- helpers ----
@@ -30,11 +35,22 @@ const json = (res: Response): Promise<any> => res.json() as Promise<any>;
 async function login(): Promise<string> {
   const res = await fetch(`${base}/api/admin/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: sameOriginHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ password: PW }),
   });
   expect(res.status).toBe(200);
   return res.headers.getSetCookie()[0].split(";")[0];
+}
+
+function sameOriginHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
+  return { Origin: base, ...(extraHeaders ?? {}) };
+}
+
+function adminHeaders(
+  cookie: string,
+  extraHeaders?: Record<string, string>
+): Record<string, string> {
+  return sameOriginHeaders({ Cookie: cookie, ...(extraHeaders ?? {}) });
 }
 
 async function createSession(
@@ -44,14 +60,18 @@ async function createSession(
 ) {
   const res = await fetch(`${base}/api/admin/sessions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
+    headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
     body: JSON.stringify({ title, ...extraBody }),
   });
   return { status: res.status, body: await json(res) };
 }
 
 function connect(extraHeaders?: Record<string, string>): Promise<Socket> {
-  const socket = io(base, { transports: ["websocket"], reconnection: false, extraHeaders });
+  const socket = io(base, {
+    transports: ["websocket"],
+    reconnection: false,
+    extraHeaders: sameOriginHeaders(extraHeaders),
+  });
   return new Promise((resolve, reject) => {
     socket.on("connect", () => resolve(socket));
     socket.on("connect_error", reject);
@@ -113,8 +133,48 @@ describe("REST API", () => {
   it("rejects login with a wrong password", async () => {
     const res = await fetch(`${base}/api/admin/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: sameOriginHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ password: "nope" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("rate-limits repeated failed login attempts", async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await fetch(`${base}/api/admin/login`, {
+        method: "POST",
+        headers: sameOriginHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ password: "wrong-again" }),
+      });
+      expect(res.status).toBe(401);
+    }
+
+    const locked = await fetch(`${base}/api/admin/login`, {
+      method: "POST",
+      headers: sameOriginHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ password: "still-wrong" }),
+    });
+    expect(locked.status).toBe(429);
+    expect((await json(locked)).error).toBe("login-rate-limit");
+  });
+
+  it("resets failed login attempts after a successful login", async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(`${base}/api/admin/login`, {
+        method: "POST",
+        headers: sameOriginHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ password: "wrong-before-success" }),
+      });
+      expect(res.status).toBe(401);
+    }
+
+    const cookie = await login();
+    expect(cookie).toContain("pdfsync.sid=");
+
+    const res = await fetch(`${base}/api/admin/login`, {
+      method: "POST",
+      headers: sameOriginHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ password: "wrong-after-success" }),
     });
     expect(res.status).toBe(401);
   });
@@ -143,11 +203,54 @@ describe("REST API", () => {
     const started = await json(
       await fetch(`${base}/api/admin/sessions/${body.id}/start`, {
         method: "POST",
-        headers: { Cookie: cookie },
+        headers: adminHeaders(cookie),
       })
     );
     expect(started.status).toBe("live");
     expect(started.playing).toBe(true);
+  });
+
+  it("accepts a valid Referer when Origin is absent on an admin mutation", async () => {
+    const cookie = await login();
+    const res = await fetch(`${base}/api/admin/sessions`, {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        Referer: `${base}/admin`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "Referer allowed" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects admin mutations with a mismatched Origin", async () => {
+    const cookie = await login();
+    const res = await fetch(`${base}/api/admin/sessions`, {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        Origin: "https://evil.example",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "Wrong origin" }),
+    });
+    expect(res.status).toBe(403);
+    expect((await json(res)).error).toBe("invalid-origin");
+  });
+
+  it("rejects admin mutations when both Origin and Referer are missing", async () => {
+    const cookie = await login();
+    const res = await fetch(`${base}/api/admin/sessions`, {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "No origin headers" }),
+    });
+    expect(res.status).toBe(403);
+    expect((await json(res)).error).toBe("invalid-origin");
   });
 
   it("guards the metrics endpoint and returns process + app stats to admins", async () => {
@@ -175,7 +278,7 @@ describe("REST API", () => {
     form.append("pdf", new Blob(["not allowed"], { type: "text/plain" }), "evil.txt");
     const res = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
       method: "POST",
-      headers: { Cookie: cookie },
+      headers: adminHeaders(cookie),
       body: form,
     });
     expect(res.status).toBe(400);
@@ -197,7 +300,7 @@ describe("REST API", () => {
     const updated = await json(
       await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
         method: "POST",
-        headers: { Cookie: cookie },
+        headers: adminHeaders(cookie),
         body: form,
       })
     );
@@ -217,11 +320,38 @@ describe("REST API", () => {
     );
     const res = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
       method: "POST",
-      headers: { Cookie: cookie },
+      headers: adminHeaders(cookie),
       body: form,
     });
     expect(res.status).toBe(400);
     expect((await json(res)).error).toBe("document-description-required");
+  });
+
+  it("sets baseline security headers on app responses", async () => {
+    const res = await fetch(`${base}/api/health`);
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("x-powered-by")).toBeNull();
+  });
+
+  it("keeps nosniff on uploaded files", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "PDF upload");
+
+    const form = new FormData();
+    form.append("pdf", new Blob(["%PDF-1.4"], { type: "application/pdf" }), "score.pdf");
+    const updated = await json(
+      await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+        method: "POST",
+        headers: adminHeaders(cookie),
+        body: form,
+      })
+    );
+
+    const fileRes = await fetch(`${base}${updated.pdfUrl}`);
+    expect(fileRes.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });
 
@@ -292,6 +422,23 @@ describe("Socket.IO sync", () => {
 
     viewer.close();
     admin.close();
+  });
+
+  it("rejects a websocket handshake from a mismatched Origin", async () => {
+    const rejected = io(base, {
+      transports: ["websocket"],
+      reconnection: false,
+      extraHeaders: { Origin: "https://evil.example" },
+    });
+
+    await expect(
+      new Promise((resolve, reject) => {
+        rejected.on("connect", resolve);
+        rejected.on("connect_error", reject);
+      })
+    ).rejects.toBeTruthy();
+
+    rejected.close();
   });
 
   it("broadcasts page-mode changes and page jumps to viewers", async () => {
@@ -424,7 +571,7 @@ describe("Socket.IO sync", () => {
       return json(
         await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
           method: "POST",
-          headers: { Cookie: cookie },
+          headers: adminHeaders(cookie),
           body: form,
         })
       );
@@ -436,11 +583,11 @@ describe("Socket.IO sync", () => {
     // Advance into the first song, then a viewer joins.
     await fetch(`${base}/api/admin/sessions/${body.id}/start`, {
       method: "POST",
-      headers: { Cookie: cookie },
+      headers: adminHeaders(cookie),
     });
     await fetch(`${base}/api/admin/sessions/${body.id}/seek`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
       body: JSON.stringify({ progress: 0.6 }),
     });
     const viewer = await connect();

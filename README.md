@@ -145,6 +145,15 @@ The proxy must forward WebSocket upgrade headers and allow ~50 MB request bodies
 for PDF uploads. Set `NODE_ENV=production` so the session cookie is marked
 `secure`; the app already trusts `X-Forwarded-Proto`.
 
+Production deployments assume exactly one trusted reverse proxy hop and do not
+support exposing the Node app port directly to the internet. Keep the app bound
+to a private interface or container network and let the proxy terminate TLS.
+
+BandScroll is intentionally designed for audience-visible/live-session content.
+Treat uploaded documents for listed or live sessions as visible to anyone with
+the public link or code; private/confidential document access control is out of
+scope for the current product model.
+
 ## Project structure
 
 ```

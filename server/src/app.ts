@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { createServer, type Server as HttpServer } from "node:http";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -15,6 +16,7 @@ import { initSocketServer } from "./sockets/socketServer.js";
 import { logger } from "./lib/logger.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { allowedConnectSources } from "./security/origin.js";
 
 /**
  * Builds the fully wired Express app + HTTP server + Socket.IO, but does NOT
@@ -35,7 +37,34 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   });
 
   const app = express();
-  app.set("trust proxy", 1); // behind Caddy in production
+  app.disable("x-powered-by");
+  if (env.isProduction) {
+    app.set("trust proxy", 1); // behind one reverse proxy hop (Caddy) in production
+    logger.info("production reverse proxy required", {
+      trustedProxyHops: 1,
+      directAppExposureSupported: false,
+    });
+  }
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          connectSrc: allowedConnectSources(),
+          imgSrc: ["'self'", "data:", "blob:"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          workerSrc: ["'self'", "blob:"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+        },
+      },
+      crossOriginOpenerPolicy: false,
+      referrerPolicy: { policy: "no-referrer" },
+    })
+  );
 
   app.use(
     cors({
@@ -45,8 +74,8 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
       credentials: true,
     })
   );
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "1mb" }));
   app.use(requestLogger);
   app.use(sessionMiddleware);
 

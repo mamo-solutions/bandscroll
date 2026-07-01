@@ -12,6 +12,8 @@ httpServer.listen(env.PORT, () => {
     env: env.NODE_ENV,
     storage: env.STORAGE,
     logLevel: env.LOG_LEVEL,
+    publicBaseUrl: env.PUBLIC_BASE_URL,
+    reverseProxyRequired: env.isProduction,
   });
 
   // Periodic performance-stats summary. unref() so it never blocks shutdown.

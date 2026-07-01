@@ -7,6 +7,12 @@ import { env } from "../env.js";
 import { checkPassword, requireAdmin } from "../auth.js";
 import { logger } from "../lib/logger.js";
 import { metrics } from "../lib/metrics.js";
+import {
+  clearLoginAttemptFailures,
+  recordFailedLoginAttempt,
+  requireLoginAttemptAllowed,
+} from "../security/loginRateLimit.js";
+import { requireTrustedAdminOrigin } from "../security/origin.js";
 import { validateUploadFile } from "../uploads/validate.js";
 import {
   createSession,
@@ -90,11 +96,13 @@ function rateLimitUpload(req: Request, res: Response, next: NextFunction): void 
 }
 
 // ---- Auth ----
-adminRouter.post("/login", (req, res) => {
+adminRouter.post("/login", requireLoginAttemptAllowed, (req, res) => {
   if (!checkPassword(req.body?.password)) {
+    recordFailedLoginAttempt(req);
     res.status(401).json({ error: "invalid-password" });
     return;
   }
+  clearLoginAttemptFailures(req);
   req.session.isAdmin = true;
   res.json({ ok: true });
 });
@@ -112,6 +120,14 @@ adminRouter.get("/me", (req, res) => {
 
 // ---- Everything below requires admin ----
 adminRouter.use(requireAdmin);
+adminRouter.use((req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    next();
+    return;
+  }
+
+  requireTrustedAdminOrigin(req, res, next);
+});
 
 adminRouter.get("/sessions", (_req, res) => {
   res.json(listAdminSessions());

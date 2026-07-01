@@ -18,6 +18,7 @@ import {
   nextPlaybackPatch,
   pageStartProgress,
 } from "../lib/sessionPlayback.js";
+import { isAllowedSocketOrigin } from "../security/origin.js";
 
 const log = logger.child("socket");
 
@@ -49,7 +50,14 @@ export function initSocketServer(
   sessionMiddleware: RequestHandler
 ): Server {
   io = new Server(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: {
+      origin: (origin, callback) => callback(null, isAllowedSocketOrigin(origin)),
+      credentials: true,
+    },
+    allowRequest: (req, callback) => {
+      const originHeader = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+      callback(null, isAllowedSocketOrigin(originHeader));
+    },
   });
 
   // Share the express-session middleware so socket.request.session is populated.
