@@ -2,13 +2,14 @@
 
 **Real-time synchronized PDF scrolling for live sessions.**
 
-BandScroll lets a host — a conductor, band leader, or presenter — open a PDF
-(sheet music, a set sheet, slides) and control its auto-scroll while many
-read-only viewers follow along in perfect sync over WebSockets. The audience
-just opens a link or types a session code; their PDF scrolls itself, exactly in
-time with the host.
-
+[![Tests](https://github.com/mamo-solutions/bandscroll/actions/workflows/ci-release.yml/badge.svg)](https://github.com/mamo-solutions/bandscroll/actions/workflows/ci-release.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+BandScroll lets a host — a conductor, band leader, or presenter — open a PDF
+(sheet music, a set sheet, slides) or an image and control its playback while
+many read-only viewers follow along in perfect sync over WebSockets. The
+audience just opens a link or types a session code; their document advances
+itself, exactly in time with the host.
 
 > Self-hostable · no accounts for viewers · mobile-first PWA
 
@@ -17,23 +18,35 @@ time with the host.
 ## Features
 
 - 🎼 **Host-controlled auto-scroll** — play, pause, stop, seek, speed, restart.
+- 🖥️ **Fullscreen live reader** — distraction-free public session view with
+  auto-hiding overlays and edge-to-edge document presentation.
+- 📄 **Scroll mode and page mode** — continuous scrolling for long sheets or
+  page-by-page playback with direct page navigation.
 - 🎚️ **Tap tempo** — tap in the beat and BandScroll derives the scroll speed
   from pages per song and beats per song.
 - 🎸 **Song markers / setlist** — save titled markers per page and jump to them
   instantly during the session.
 - 🦶 **Foot-switch friendly keyboard shortcuts** — arrow keys control speed
   (`↑`/`↓`), tap tempo (`←`) and play/pause (`→`/`Space`).
+- 🖼️ **PDF and image uploads** — use the same synchronized viewer for sheet
+  music, slides, posters, or reference images.
 - 🔄 **Real-time sync** over Socket.IO; viewers are strictly read-only.
 - 🎵 **Swap songs live** — change the PDF mid-session without dropping viewers.
 - 👀 **Open session list + join-by-code** (e.g. `SESSION-7421`) on the home page.
 - 🔐 **Password-protected host area**; the password lives only in the backend
   `.env` and never reaches the browser bundle.
+- 💾 **Pluggable persistence** — run with in-memory storage, file-backed JSON,
+  or SQLite depending on how durable you need sessions to be.
 - 🧮 **Drift-free playback** — viewers extrapolate position locally and gently
   correct toward the host's authoritative state; playback keeps moving even when
   the host tab is in the background.
 - 🌍 **English & German UI**, auto-detected from the browser with a manual toggle.
 - 📱 **Installable PWA** with a modern, responsive, warm-pastel interface; the
   admin control view is optimized for tablets in portrait mode.
+- 📈 **Structured logs and admin metrics** — request/socket metrics plus a live
+  admin metrics endpoint for operational visibility.
+- 🚀 **Automated CI and releases** — pushes to `main` run tests, build the app,
+  and publish a GitHub release for new semver versions.
 - 🐳 **Docker-ready**, or run it behind your existing nginx / Caddy.
 
 ## How it works
@@ -60,6 +73,8 @@ on the server and shared between HTTP and WebSocket via a single session.
   `multer` for uploads. Pluggable storage: in-memory by default, file-backed
   JSON via `STORAGE=file`, or SQLite via `STORAGE=sqlite` (durable per-write).
 - **Tests:** Vitest (unit + an integration suite that boots the real server).
+- **Automation:** GitHub Actions for CI, build verification, and release
+  publication from committed semver versions.
 
 ## Quick start
 
@@ -87,6 +102,7 @@ Open <http://localhost:5173>. The host area is at `/admin` (link in the footer).
 | `npm run dev` | Run backend + frontend together (hot reload). |
 | `npm run build` | Build the client, then the server (also the typecheck gate). |
 | `npm test` | Run the server and client test suites. |
+| `npm run version:sync` | Advance the committed semver version based on new git history. |
 
 ## Configuration
 
@@ -127,6 +143,19 @@ The client reports uncaught errors (and socket connection failures) to
 `POST /api/client-log`, rate-limited to 10/min, so crashes without a visible
 console — notably mobile Safari — still land in the server log.
 
+## Release workflow
+
+BandScroll now keeps its package versions in sync with git history. The
+committed semver number is the release source of truth, while the client build
+adds the short git hash for display in the UI.
+
+- `feat:` commits trigger a minor bump.
+- `fix:` and other shipped code changes trigger a patch bump.
+- `BREAKING CHANGE` or `!` markers trigger a major bump.
+- Pushes to `main` run GitHub Actions tests and builds, then publish a GitHub
+  release for the committed version if the matching `vX.Y.Z` tag/release does
+  not already exist.
+
 ## Deployment
 
 The server serves the built client and the uploads directory, so a reverse proxy
@@ -165,8 +194,10 @@ bandscroll/
 │   └── src/{app,index,env,types,sessionStore,auth}.ts
 │       ├── routes/{publicRoutes,adminRoutes}.ts
 │       ├── sockets/socketServer.ts
-│       ├── store/{memorySessionStore,fileSessionStore}.ts
+│       ├── store/{memorySessionStore,fileSessionStore,sqliteSessionStore}.ts
 │       └── uploads/{cleanup,validate}.ts
+├── .github/workflows/ # CI and release automation
+├── scripts/         # repository automation helpers
 ├── uploads/         # uploaded PDFs
 ├── Dockerfile · docker-compose.yml · Caddyfile
 └── .env.example
@@ -179,7 +210,8 @@ Sessions default to in-memory storage; set `STORAGE=file` (JSON) or
 Uploads are garbage-collected when a session is deleted or its PDF is replaced,
 provided no other session references the same file. There is a single shared
 host password (no per-user accounts). Possible next steps: a Postgres adapter, a
-Redis adapter for horizontal scaling, multi-file setlists, and per-user roles.
+Redis adapter for horizontal scaling, multi-file setlists, release artifacts
+for deployment targets, and per-user roles.
 
 ## Contributing
 

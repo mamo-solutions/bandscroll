@@ -1,0 +1,114 @@
+name: CI and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm ci --prefix server
+
+      - name: Install client dependencies
+        run: npm ci --prefix client
+
+      - name: Read release version
+        id: version
+        run: |
+          echo "value=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Run test suite
+        run: npm test
+        env:
+          SKIP_VERSION_SYNC: "1"
+
+      - name: Build application
+        run: npm run build
+        env:
+          SKIP_VERSION_SYNC: "1"
+
+      - name: Package release assets
+        run: |
+          mkdir -p release-assets
+          tar -czf "release-assets/bandscroll-client-v${VERSION}.tar.gz" -C client dist
+          tar -czf "release-assets/bandscroll-server-v${VERSION}.tar.gz" -C server dist
+          sha256sum release-assets/* > "release-assets/bandscroll-v${VERSION}-sha256.txt"
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-v${{ steps.version.outputs.value }}
+          path: release-assets
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.test-and-build.outputs.version }}
+      TAG: v${{ needs.test-and-build.outputs.version }}
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v5
+        with:
+          name: release-assets-v${{ needs.test-and-build.outputs.version }}
+          path: release-assets
+
+      - name: Check whether release already exists
+        id: release_check
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub release
+        if: steps.release_check.outputs.exists == 'false'
+        run: |
+          gh release create "$TAG" \
+            release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes "Automated release for version $VERSION."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

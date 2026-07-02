@@ -18,6 +18,7 @@ const lockfilePaths = [
 ];
 
 const apply = process.argv.includes("--apply");
+const shouldSkip = process.env.SKIP_VERSION_SYNC === "1";
 
 /**
  * Read a JSON file with its existing formatting conventions preserved on write.
@@ -186,7 +187,7 @@ const commits = readCommitsSince(lastProcessedCommit);
 const bump = determineBump(commits);
 const nextVersion = bump ? incrementVersion(currentVersion, bump) : currentVersion;
 
-if (apply) {
+if (apply && !shouldSkip) {
   for (const manifestPath of manifestPaths) {
     const manifest = readJson(manifestPath);
     manifest.version = nextVersion;
@@ -213,5 +214,6 @@ process.stdout.write(
     headCommit,
     lastProcessedCommit,
     apply,
+    skipped: shouldSkip,
   })
 );
