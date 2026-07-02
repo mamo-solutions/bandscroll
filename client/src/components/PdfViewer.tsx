@@ -97,6 +97,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Last metrics pushed to the parent, so we only notify on a real value change
+  // (getScrollMetrics returns a fresh object each call, which would otherwise
+  // re-trigger the parent's setState on every render — an infinite loop).
+  const lastMetricsRef = useRef<PdfViewerScrollMetrics | null>(null);
   const [numPages, setNumPages] = useState(0);
   // CSS display width of each page/image wrapper (responsive).
   const [displayWidth, setDisplayWidth] = useState(800);
@@ -289,7 +293,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   );
 
   useEffect(() => {
-    onMetricsChange?.(getScrollMetrics());
+    const next = getScrollMetrics();
+    const prev = lastMetricsRef.current;
+    const unchanged =
+      prev === next ||
+      (prev != null &&
+        next != null &&
+        prev.viewportHeightPx === next.viewportHeightPx &&
+        prev.maxScrollPx === next.maxScrollPx &&
+        prev.scrollableScreens === next.scrollableScreens);
+    if (unchanged) return;
+    lastMetricsRef.current = next;
+    onMetricsChange?.(next);
   }, [
     containerHeight,
     effectivePageHeights,
