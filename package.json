@@ -1,6 +1,6 @@
 {
   "name": "bandscroll",
-  "version": "1.0.0",
+  "version": "1.9.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "Realtime synchronized PDF scrolling for live sessions (PWA MVP)",
@@ -9,11 +9,16 @@
     "npm": ">=10"
   },
   "scripts": {
+    "version:sync": "node scripts/sync-version.mjs --apply",
+    "predev": "npm run version:sync",
     "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "prebuild": "npm run version:sync",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "build": "npm --prefix client run build && npm --prefix server run build",
+    "pretest": "npm run version:sync",
     "test": "npm --prefix server run test && npm --prefix client run test",
+    "prestart": "npm run version:sync",
     "start": "npm --prefix server run start",
     "install:all": "npm --prefix server install && npm --prefix client install"
   },

@@ -1,6 +1,6 @@
 {
   "name": "bandscroll-server",
-  "version": "1.0.0",
+  "version": "1.9.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -10,10 +10,14 @@
     "npm": ">=10"
   },
   "scripts": {
+    "predev": "node ../scripts/sync-version.mjs --apply",
     "dev": "tsx watch src/index.ts",
+    "prebuild": "node ../scripts/sync-version.mjs --apply",
     "build": "tsc -p tsconfig.json",
+    "prestart": "node ../scripts/sync-version.mjs --apply",
     "start": "node dist/index.js",
     "load:test": "tsx scripts/load-test.ts",
+    "pretest": "node ../scripts/sync-version.mjs --apply",
     "test": "vitest run",
     "test:watch": "vitest"
   },

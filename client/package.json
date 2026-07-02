@@ -1,6 +1,6 @@
 {
   "name": "bandscroll-client",
-  "version": "1.0.0",
+  "version": "1.9.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -10,12 +10,12 @@
   },
   "scripts": {
     "version": "node scripts/version.js",
-    "predev": "npm run version",
+    "predev": "node ../scripts/sync-version.mjs --apply && npm run version",
     "dev": "vite",
-    "prebuild": "npm run version",
+    "prebuild": "node ../scripts/sync-version.mjs --apply && npm run version",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "pretest": "npm run version",
+    "pretest": "node ../scripts/sync-version.mjs --apply && npm run version",
     "test": "vitest run",
     "test:watch": "vitest"
   },

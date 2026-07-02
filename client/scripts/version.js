@@ -9,13 +9,21 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, "../package.json"), "utf-
 
 const repoRoot = resolve(__dirname, "../..");
 let commitHash = "unknown";
+let dirtySuffix = "";
 try {
   commitHash = execSync("git rev-parse --short HEAD", { cwd: repoRoot }).toString().trim();
+  const dirtyOutput = execSync("git status --porcelain", { cwd: repoRoot }).toString().trim();
+  if (dirtyOutput) {
+    const dirtyHash = dirtyOutput
+      .split("")
+      .reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0);
+    dirtySuffix = `.dirty.${Math.abs(dirtyHash).toString(16).padStart(8, "0")}`;
+  }
 } catch {
   /* not a git checkout or git unavailable */
 }
 
-const version = `${pkg.version}+${commitHash}`;
+const version = `${pkg.version}+${commitHash}${dirtySuffix}`;
 
 writeFileSync(
   versionFile,
