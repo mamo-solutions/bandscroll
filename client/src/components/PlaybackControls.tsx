@@ -172,7 +172,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
       maxScreensPerMinute,
       Math.max(minScreensPerMinute, currentScreensPerMinute + delta)
     );
-    applyScreensPerMinute(Number(next.toFixed(1)));
+    applyScreensPerMinute(next);
   }
 
   function nudgePageTempo(deltaSeconds: number) {
