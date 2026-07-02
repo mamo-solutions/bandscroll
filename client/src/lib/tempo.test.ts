@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_SCROLL_SCREENS_PER_MINUTE,
   SPEED_MAX,
   SPEED_MIN,
   calculateSpeedFromBpm,
   deriveBpmFromTaps,
+  screensPerMinuteToSpeed,
+  speedToScreensPerMinute,
+  speedToSecondsPerScreen,
 } from "./tempo";
 
 describe("deriveBpmFromTaps", () => {
@@ -39,24 +43,24 @@ describe("deriveBpmFromTaps", () => {
 describe("calculateSpeedFromBpm", () => {
   const base = {
     detectedBpm: 120,
-    pagesPerSong: 2,
+    screensPerSong: 3,
     beatsPerSong: 256,
-    numPages: 40,
+    scrollableScreens: 12,
   };
 
   it("returns 0 when any input is missing or invalid", () => {
-    expect(calculateSpeedFromBpm({ ...base, pagesPerSong: 0 })).toBe(0);
+    expect(calculateSpeedFromBpm({ ...base, screensPerSong: 0 })).toBe(0);
     expect(calculateSpeedFromBpm({ ...base, beatsPerSong: 0 })).toBe(0);
-    expect(calculateSpeedFromBpm({ ...base, numPages: 0 })).toBe(0);
+    expect(calculateSpeedFromBpm({ ...base, scrollableScreens: 0 })).toBe(0);
     expect(calculateSpeedFromBpm({ ...base, detectedBpm: 0 })).toBe(0);
     expect(calculateSpeedFromBpm({ ...base, detectedBpm: -5 })).toBe(0);
   });
 
-  it("computes speed = songProgress / songDurationSeconds", () => {
-    // songProgress = 2/40 = 0.05
+  it("computes speed from screens per song and visible song duration", () => {
     // songDuration = 256 / (120/60) = 128s
-    // speed = 0.05 / 128 = 0.000390625
-    expect(calculateSpeedFromBpm(base)).toBeCloseTo(0.05 / 128, 12);
+    // screensPerSecond = 3 / 128
+    // speed = (3 / 128) / 12 = 0.001953125
+    expect(calculateSpeedFromBpm(base)).toBeCloseTo((3 / 128) / 12, 12);
   });
 
   it("scales with tempo: faster BPM -> faster scroll", () => {
@@ -66,27 +70,26 @@ describe("calculateSpeedFromBpm", () => {
     expect(fast).toBeCloseTo(slow * 2, 12);
   });
 
-  it("caps songProgress at a full document (1.0)", () => {
-    // pagesPerSong > numPages should not push songProgress above 1.
-    const capped = calculateSpeedFromBpm({
+  it("does not depend on page count, only visible distance", () => {
+    const shortScore = calculateSpeedFromBpm({
       ...base,
-      pagesPerSong: 100,
-      numPages: 40,
+      screensPerSong: 2.5,
+      scrollableScreens: 8,
     });
-    const full = calculateSpeedFromBpm({
+    const longScore = calculateSpeedFromBpm({
       ...base,
-      pagesPerSong: 40,
-      numPages: 40,
+      screensPerSong: 2.5,
+      scrollableScreens: 8,
     });
-    expect(capped).toBe(full);
+    expect(shortScore).toBeCloseTo(longScore, 12);
   });
 
   it("clamps the result to SPEED_MAX for very fast tempos", () => {
     const speed = calculateSpeedFromBpm({
       detectedBpm: 1000,
-      pagesPerSong: 40,
+      screensPerSong: 30,
       beatsPerSong: 128,
-      numPages: 40,
+      scrollableScreens: 6,
     });
     expect(speed).toBe(SPEED_MAX);
   });
@@ -94,10 +97,25 @@ describe("calculateSpeedFromBpm", () => {
   it("clamps the result to SPEED_MIN for very slow scrolling", () => {
     const speed = calculateSpeedFromBpm({
       detectedBpm: 30,
-      pagesPerSong: 1,
+      screensPerSong: 1,
       beatsPerSong: 384,
-      numPages: 1000,
+      scrollableScreens: 200,
     });
     expect(speed).toBe(SPEED_MIN);
+  });
+});
+
+describe("screen tempo conversion helpers", () => {
+  it("round-trips screens per minute through raw speed", () => {
+    const rawSpeed = screensPerMinuteToSpeed(DEFAULT_SCROLL_SCREENS_PER_MINUTE, 14);
+    expect(speedToScreensPerMinute(rawSpeed, 14)).toBeCloseTo(
+      DEFAULT_SCROLL_SCREENS_PER_MINUTE,
+      10
+    );
+  });
+
+  it("derives seconds per screen from raw speed", () => {
+    const rawSpeed = screensPerMinuteToSpeed(6, 10);
+    expect(speedToSecondsPerScreen(rawSpeed, 10)).toBeCloseTo(10, 10);
   });
 });

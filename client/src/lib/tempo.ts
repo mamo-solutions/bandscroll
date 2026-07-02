@@ -4,7 +4,8 @@
 
 /** Scroll speed bounds (progress/second across the whole document). */
 export const SPEED_MIN = 0.00001;
-export const SPEED_MAX = 0.002;
+export const SPEED_MAX = 0.25;
+export const DEFAULT_SCROLL_SCREENS_PER_MINUTE = 7;
 
 /**
  * Average the gaps between successive tap timestamps and convert to BPM.
@@ -23,34 +24,54 @@ export function deriveBpmFromTaps(taps: number[]): number | null {
 
 export type SpeedFromBpmInput = {
   detectedBpm: number;
-  /** Pages the band advances per song. */
-  pagesPerSong: number;
+  /** Screens the score advances per song. */
+  screensPerSong: number;
   /** Beats per song (preset: 128/256/384). */
   beatsPerSong: number;
-  /** Total pages in the loaded document. */
-  numPages: number;
+  /** Scrollable viewport heights in the loaded document. */
+  scrollableScreens: number;
 };
+
+function clampSpeed(value: number): number {
+  return Math.min(SPEED_MAX, Math.max(SPEED_MIN, value));
+}
+
+export function screensPerMinuteToSpeed(
+  screensPerMinute: number,
+  scrollableScreens: number
+): number {
+  if (screensPerMinute <= 0 || scrollableScreens <= 0) return 0;
+  return clampSpeed((screensPerMinute / 60) / scrollableScreens);
+}
+
+export function speedToScreensPerMinute(speed: number, scrollableScreens: number): number {
+  if (speed <= 0 || scrollableScreens <= 0) return 0;
+  return speed * scrollableScreens * 60;
+}
+
+export function speedToSecondsPerScreen(speed: number, scrollableScreens: number): number | null {
+  const screensPerMinute = speedToScreensPerMinute(speed, scrollableScreens);
+  if (screensPerMinute <= 0) return null;
+  return 60 / screensPerMinute;
+}
 
 /**
  * Convert a detected tempo into a normalized scroll speed (progress/second),
  * clamped to [SPEED_MIN, SPEED_MAX]. Returns 0 when inputs are incomplete or
  * invalid (the caller treats 0 as "don't apply").
  *
- *   songProgress  = pagesPerSong / numPages          (fraction of doc per song)
- *   songSeconds   = beatsPerSong / (bpm / 60)        (seconds the song lasts)
- *   speed         = songProgress / songSeconds
+ *   songSeconds      = beatsPerSong / (bpm / 60)
+ *   screensPerSecond = screensPerSong / songSeconds
+ *   speed            = screensPerSecond / scrollableScreens
  */
 export function calculateSpeedFromBpm({
   detectedBpm,
-  pagesPerSong,
+  screensPerSong,
   beatsPerSong,
-  numPages,
+  scrollableScreens,
 }: SpeedFromBpmInput): number {
-  if (!pagesPerSong || !beatsPerSong || !numPages || detectedBpm <= 0) return 0;
-  const songProgress = Math.min(1, pagesPerSong / numPages);
+  if (!screensPerSong || !beatsPerSong || !scrollableScreens || detectedBpm <= 0) return 0;
   const songDurationSeconds = beatsPerSong / (detectedBpm / 60);
-  return Math.min(
-    SPEED_MAX,
-    Math.max(SPEED_MIN, songProgress / songDurationSeconds)
-  );
+  const screensPerSecond = screensPerSong / songDurationSeconds;
+  return screensPerMinuteToSpeed(screensPerSecond * 60, scrollableScreens);
 }

@@ -47,7 +47,14 @@ export type PdfViewerHandle = {
   getProgressForPage: (page: number) => number;
   getCurrentPage: () => number;
   getCurrentProgress: () => number;
+  getScrollMetrics: () => PdfViewerScrollMetrics | null;
   readonly numPages: number;
+};
+
+export type PdfViewerScrollMetrics = {
+  viewportHeightPx: number;
+  maxScrollPx: number;
+  scrollableScreens: number;
 };
 
 type Props = {
@@ -64,6 +71,8 @@ type Props = {
   onUserScroll?: (progress: number) => void;
   /** Called when a PDF finishes loading with its page count. */
   onDocumentLoad?: (numPages: number) => void;
+  /** Called whenever the viewer's scroll metrics become available or change. */
+  onMetricsChange?: (metrics: PdfViewerScrollMetrics | null) => void;
   /** When true, all user-initiated scroll input (wheel, touch, keys) is blocked.
    *  Programmatic scrolling via scrollToProgress still works. */
   blockUserScroll?: boolean;
@@ -81,6 +90,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     visiblePage,
     onUserScroll,
     onDocumentLoad,
+    onMetricsChange,
     blockUserScroll,
   },
   ref
@@ -196,6 +206,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return Math.max(1, el.scrollHeight - el.clientHeight);
   };
 
+  const getScrollMetrics = useCallback((): PdfViewerScrollMetrics | null => {
+    const el = scrollRef.current;
+    if (!el || !readyRef.current || singlePageMode) return null;
+    const viewportHeightPx = Math.max(1, el.clientHeight);
+    const maxScrollPx = maxScroll();
+    return {
+      viewportHeightPx,
+      maxScrollPx,
+      scrollableScreens: Math.max(1, maxScrollPx / viewportHeightPx),
+    };
+  }, [singlePageMode]);
+
   const getProgressForPage = (page: number) => {
     if (singlePageMode) return pageProgress(page, numPages);
     const el = scrollRef.current;
@@ -258,12 +280,25 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         if (!el) return 0;
         return clamp01(el.scrollTop / maxScroll());
       },
+      getScrollMetrics,
       get numPages() {
         return numPages;
       },
     }),
-    [clampedVisiblePage, getProgressForPage, numPages, pageTopOffsets, singlePageMode]
+    [clampedVisiblePage, getProgressForPage, getScrollMetrics, numPages, pageTopOffsets, singlePageMode]
   );
+
+  useEffect(() => {
+    onMetricsChange?.(getScrollMetrics());
+  }, [
+    containerHeight,
+    effectivePageHeights,
+    getScrollMetrics,
+    numPages,
+    onMetricsChange,
+    pageAspects,
+    singlePageMode,
+  ]);
 
   // Responsive display width — only drives CSS sizing of already-rasterized
   // pages, so reacting to it is cheap (no PDF.js re-render on resize/rotate).

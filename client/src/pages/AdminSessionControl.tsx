@@ -18,7 +18,11 @@ import {
 import { api, ApiError } from "@/api/client";
 import { auth } from "@/api/auth";
 import { AdminSessionSetupPanel } from "@/components/AdminSessionSetupPanel";
-import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
+import {
+  PdfViewer,
+  type PdfViewerHandle,
+  type PdfViewerScrollMetrics,
+} from "@/components/PdfViewer";
 import { PlaybackControls, type PlaybackControlsHandle } from "@/components/PlaybackControls";
 import { useHeaderSlot } from "@/components/HeaderSlot";
 import { Badge } from "@/components/ui/badge";
@@ -38,12 +42,20 @@ import {
 import { reportError } from "@/lib/errorLog";
 import {
   clampPage,
+  getPageDwellMs,
   getPlaybackDisplayProgress,
   progressToNearestPage,
 } from "@/lib/playback";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { useI18n } from "@/i18n/I18nProvider";
+import {
+  DEFAULT_SCROLL_SCREENS_PER_MINUTE,
+  SPEED_MAX,
+  SPEED_MIN,
+  screensPerMinuteToSpeed,
+  speedToScreensPerMinute,
+} from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
 import {
@@ -66,6 +78,7 @@ export function AdminSessionControl() {
   const [announcement, setAnnouncement] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingDocumentDescription, setSavingDocumentDescription] = useState(false);
+  const [scrollMetrics, setScrollMetrics] = useState<PdfViewerScrollMetrics | null>(null);
   const [shortcutBindings, setShortcutBindings] = useState<AdminShortcutBindings>(() =>
     loadShortcutBindings()
   );
@@ -75,13 +88,14 @@ export function AdminSessionControl() {
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
   const numPagesRef = useRef(0);
+  const scrollMetricsRef = useRef<PdfViewerScrollMetrics | null>(null);
   const reportedNumPagesRef = useRef<number | null>(null);
+  const normalizedTempoKeyRef = useRef<string | null>(null);
   const lastWallRef = useRef<number>(Date.now());
   const pdfInput = useRef<HTMLInputElement>(null);
 
-  const KB_SPEED_STEP = 0.000005;
-  const KB_SPEED_MIN = 0.00001;
-  const KB_SPEED_MAX = 0.002;
+  const KB_SCREENS_STEP = 0.5;
+  const FACTORY_SPEED = 0.0002;
   const socket = getSocket();
   const socketStatus = useSocketStatus();
 
@@ -118,6 +132,14 @@ export function AdminSessionControl() {
   useEffect(() => {
     numPagesRef.current = numPages;
   }, [numPages]);
+
+  useEffect(() => {
+    scrollMetricsRef.current = scrollMetrics;
+  }, [scrollMetrics]);
+
+  useEffect(() => {
+    if (!session?.pdfUrl) setScrollMetrics(null);
+  }, [session?.pdfUrl]);
 
   useEffect(() => {
     saveShortcutBindings(shortcutBindings);
@@ -286,6 +308,35 @@ export function AdminSessionControl() {
   }, [id, numPages, patchSession, session?.numPages, session?.pdfUrl, socket]);
 
   useEffect(() => {
+    if (!session?.pdfUrl) {
+      normalizedTempoKeyRef.current = null;
+      return;
+    }
+
+    const normalizationKey = `${session.id}:${session.pdfUrl}`;
+    if (normalizedTempoKeyRef.current === normalizationKey) return;
+    if (session.speed !== FACTORY_SPEED) {
+      normalizedTempoKeyRef.current = normalizationKey;
+      return;
+    }
+
+    const metrics = scrollMetricsRef.current;
+    if (!metrics) return;
+
+    const normalizedSpeed = screensPerMinuteToSpeed(
+      DEFAULT_SCROLL_SCREENS_PER_MINUTE,
+      metrics.scrollableScreens
+    );
+    if (normalizedSpeed <= 0 || Math.abs(normalizedSpeed - session.speed) < 1e-9) {
+      normalizedTempoKeyRef.current = normalizationKey;
+      return;
+    }
+
+    normalizedTempoKeyRef.current = normalizationKey;
+    setSpeed(normalizedSpeed);
+  }, [session?.id, session?.pdfUrl, session?.speed, scrollMetrics]);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!session) return;
       const target = e.target as HTMLElement;
@@ -307,11 +358,11 @@ export function AdminSessionControl() {
           break;
         case "speedUp":
           e.preventDefault();
-          setSpeed(Math.min(KB_SPEED_MAX, Math.max(KB_SPEED_MIN, session.speed + KB_SPEED_STEP)));
+          adjustKeyboardSpeed(KB_SCREENS_STEP);
           break;
         case "speedDown":
           e.preventDefault();
-          setSpeed(Math.min(KB_SPEED_MAX, Math.max(KB_SPEED_MIN, session.speed - KB_SPEED_STEP)));
+          adjustKeyboardSpeed(-KB_SCREENS_STEP);
           break;
         case "restart":
           e.preventDefault();
@@ -340,6 +391,39 @@ export function AdminSessionControl() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [session, shortcutBindings]);
+
+  function adjustKeyboardSpeed(deltaScreensPerMinute: number) {
+    const currentSession = stateRef.current;
+    if (!currentSession) return;
+
+    if (currentSession.playbackMode === "page") {
+      const dwellMs = getPageDwellMs(currentSession.speed, Math.max(numPagesRef.current, 1));
+      if (!dwellMs) return;
+      const currentSecondsPerPage = dwellMs / 1000;
+      const minSecondsPerPage = (getPageDwellMs(SPEED_MAX, Math.max(numPagesRef.current, 1)) ?? 0) / 1000;
+      const maxSecondsPerPage = (getPageDwellMs(SPEED_MIN, Math.max(numPagesRef.current, 1)) ?? 0) / 1000;
+      const pageTempoDelta = deltaScreensPerMinute > 0 ? -1 : 1;
+      const nextSecondsPerPage = Math.min(
+        maxSecondsPerPage,
+        Math.max(minSecondsPerPage, currentSecondsPerPage + pageTempoDelta)
+      );
+      const nextSpeed = Math.min(
+        SPEED_MAX,
+        Math.max(SPEED_MIN, 1 / (nextSecondsPerPage * Math.max(numPagesRef.current, 1)))
+      );
+      setSpeed(nextSpeed);
+      return;
+    }
+
+    const metrics = scrollMetricsRef.current;
+    if (!metrics) return;
+    const currentScreensPerMinute = speedToScreensPerMinute(
+      currentSession.speed,
+      metrics.scrollableScreens
+    );
+    const nextScreensPerMinute = Math.max(0.1, currentScreensPerMinute + deltaScreensPerMinute);
+    setSpeed(screensPerMinuteToSpeed(nextScreensPerMinute, metrics.scrollableScreens));
+  }
 
   function play() {
     const currentSession = stateRef.current;
@@ -713,6 +797,7 @@ export function AdminSessionControl() {
                       liveProgressRef.current = progress;
                       setUiProgress(progress);
                     }}
+                    onMetricsChange={setScrollMetrics}
                     onDocumentLoad={setNumPages}
                   />
                 </>
@@ -846,6 +931,7 @@ export function AdminSessionControl() {
                 session={session}
                 liveProgress={uiProgress}
                 numPages={numPages}
+                scrollableScreens={scrollMetrics?.scrollableScreens ?? null}
                 hidePrimaryControlsOnDesktop
                 onPlay={play}
                 onPause={pause}

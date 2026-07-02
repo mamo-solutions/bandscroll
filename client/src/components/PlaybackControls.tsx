@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,21 +13,23 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/I18nProvider";
+import { getPageDwellMs } from "@/lib/playback";
 import {
   SPEED_MAX,
   SPEED_MIN,
   calculateSpeedFromBpm,
   deriveBpmFromTaps,
+  screensPerMinuteToSpeed,
+  speedToScreensPerMinute,
+  speedToSecondsPerScreen,
 } from "@/lib/tempo";
-import { useI18n } from "@/i18n/I18nProvider";
+import { cn } from "@/lib/utils";
 import type { SessionState } from "@/types/session";
 
-// progress/second across the whole document. Slowest → fastest; the fastest
-// here is the old "slow" preset (a full PDF can hold 40+ songs, so even this is
-// gentle). Fine-tune beyond these with the Manual +/- steppers.
-const SPEED_PRESETS = [0.00005, 0.0001, 0.0002, 0.0003, 0.0005];
-const SPEED_STEP = 0.000005;
+const SCREEN_SPEED_PRESETS = [1, 3, 5, 7];
+const SCREEN_SPEED_STEP = 0.25;
+const PAGE_SECONDS_STEP = 1;
 
 const BEATS_PRESETS = [
   { labelKey: "controls.beatsShort", value: 128 },
@@ -43,6 +45,7 @@ type Props = {
   session: SessionState;
   liveProgress: number;
   numPages: number;
+  scrollableScreens: number | null;
   hidePrimaryControlsOnDesktop?: boolean;
   onPlay: () => void;
   onPause: () => void;
@@ -64,6 +67,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     session,
     liveProgress,
     numPages,
+    scrollableScreens,
     hidePrimaryControlsOnDesktop = false,
     onPlay,
     onPause,
@@ -77,26 +81,147 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
   ref
 ) {
   const { t } = useI18n();
-  const [pagesPerSong, setPagesPerSong] = useState<string>("2");
+  const [screensPerSong, setScreensPerSong] = useState<string>("3.0");
   const [beatsPerSong, setBeatsPerSong] = useState<number>(BEATS_PRESETS[1].value);
   const [bpm, setBpm] = useState<number | null>(null);
   const [pulse, setPulse] = useState(false);
   const [acceptedBpm, setAcceptedBpm] = useState<number | null>(null);
 
-  // Track the latest intended speed so rapid +/- clicks accumulate even before
-  // the server broadcast updates session.speed.
   const speedRef = useRef(session.speed);
   useEffect(() => {
     speedRef.current = session.speed;
   }, [session.speed]);
 
-  // Tap tempo state is kept in refs so rapid taps don't thrash React.
   const tapsRef = useRef<number[]>([]);
   const lastAppliedRef = useRef<number>(0);
 
+  const canControlScrollTempo =
+    session.playbackMode === "scroll" &&
+    scrollableScreens !== null &&
+    Number.isFinite(scrollableScreens) &&
+    scrollableScreens > 0;
+  const currentScreensPerMinute = canControlScrollTempo
+    ? speedToScreensPerMinute(session.speed, scrollableScreens)
+    : null;
+  const currentSecondsPerScreen = canControlScrollTempo
+    ? speedToSecondsPerScreen(session.speed, scrollableScreens)
+    : null;
+  const pageDwellMs =
+    session.playbackMode === "page" && numPages > 0 ? getPageDwellMs(session.speed, numPages) : null;
+  const currentSecondsPerPage =
+    pageDwellMs === null ? null : pageDwellMs / 1000;
+
+  const minScreensPerMinute =
+    scrollableScreens !== null && scrollableScreens > 0
+      ? speedToScreensPerMinute(SPEED_MIN, scrollableScreens)
+      : null;
+  const maxScreensPerMinute =
+    scrollableScreens !== null && scrollableScreens > 0
+      ? speedToScreensPerMinute(SPEED_MAX, scrollableScreens)
+      : null;
+  const minSecondsPerPage =
+    session.playbackMode === "page" && numPages > 0
+      ? (getPageDwellMs(SPEED_MAX, numPages) ?? 0) / 1000
+      : null;
+  const maxSecondsPerPage =
+    session.playbackMode === "page" && numPages > 0
+      ? (getPageDwellMs(SPEED_MIN, numPages) ?? 0) / 1000
+      : null;
+
+  const speedDisplay =
+    session.playbackMode === "scroll"
+      ? currentScreensPerMinute !== null
+        ? `${currentScreensPerMinute.toFixed(1)} ${t("controls.screensPerMinuteUnit")}`
+        : t("controls.scrollTempoUnavailable")
+      : currentSecondsPerPage !== null
+        ? `${currentSecondsPerPage.toFixed(1)} ${t("controls.secondsPerPageUnit")}`
+        : t("controls.scrollTempoUnavailable");
+  const speedHelper =
+    session.playbackMode === "scroll"
+      ? currentSecondsPerScreen !== null
+        ? `${t("controls.approxPrefix")} ${currentSecondsPerScreen.toFixed(1)} ${t("controls.secondsPerScreenUnit")}`
+        : t("controls.loadDocumentFirst")
+      : currentSecondsPerPage !== null
+        ? `${t("controls.approxPrefix")} ${currentSecondsPerPage.toFixed(1)} ${t("controls.secondsPerPageUnit")}`
+        : t("controls.scrollTempoUnavailable");
+
+  function applyRawSpeed(value: number, fromTap = false) {
+    speedRef.current = value;
+    onSetSpeed(value);
+    if (!fromTap) setAcceptedBpm(null);
+  }
+
+  function applyScreensPerMinute(value: number, fromTap = false) {
+    if (!canControlScrollTempo || scrollableScreens === null) return;
+    const rawSpeed = screensPerMinuteToSpeed(value, scrollableScreens);
+    if (rawSpeed <= 0) return;
+    applyRawSpeed(rawSpeed, fromTap);
+  }
+
+  function applySecondsPerPage(value: number) {
+    if (session.playbackMode !== "page" || numPages <= 0 || value <= 0) return;
+    const rawSpeed = Math.min(SPEED_MAX, Math.max(SPEED_MIN, 1 / (value * numPages)));
+    applyRawSpeed(rawSpeed);
+  }
+
+  function nudgeScrollTempo(delta: number) {
+    if (currentScreensPerMinute === null || minScreensPerMinute === null || maxScreensPerMinute === null) {
+      return;
+    }
+    const next = Math.min(
+      maxScreensPerMinute,
+      Math.max(minScreensPerMinute, currentScreensPerMinute + delta)
+    );
+    applyScreensPerMinute(Number(next.toFixed(1)));
+  }
+
+  function nudgePageTempo(deltaSeconds: number) {
+    if (currentSecondsPerPage === null || minSecondsPerPage === null || maxSecondsPerPage === null) return;
+    const next = Math.min(
+      maxSecondsPerPage,
+      Math.max(minSecondsPerPage, currentSecondsPerPage + deltaSeconds)
+    );
+    applySecondsPerPage(Number(next.toFixed(1)));
+  }
+
+  function handleTap() {
+    if (!canControlScrollTempo || scrollableScreens === null) return;
+
+    const now = Date.now();
+    const taps = tapsRef.current;
+
+    if (taps.length > 0 && now - taps[taps.length - 1] > TAP_COOLDOWN_MS) {
+      taps.length = 0;
+      setAcceptedBpm(null);
+    }
+
+    taps.push(now);
+    if (taps.length > TAP_MAX_HISTORY) taps.shift();
+
+    setPulse(true);
+    setTimeout(() => setPulse(false), 120);
+
+    const detectedBpm = deriveBpmFromTaps(taps);
+    if (detectedBpm === null) return;
+    setBpm(detectedBpm);
+
+    if (taps.length >= TAP_MIN_TAPS && now - lastAppliedRef.current >= TAP_COOLDOWN_MS) {
+      const speed = calculateSpeedFromBpm({
+        detectedBpm,
+        screensPerSong: Number(screensPerSong),
+        beatsPerSong,
+        scrollableScreens,
+      });
+      if (speed > 0) {
+        applyRawSpeed(speed, true);
+        setAcceptedBpm(detectedBpm);
+        lastAppliedRef.current = now;
+      }
+    }
+  }
+
   useImperativeHandle(ref, () => ({ tap: handleTap }), [handleTap]);
 
-  // Continuous pulse on the tap button at the accepted BPM.
   useEffect(() => {
     if (!acceptedBpm || acceptedBpm <= 0) return;
     const beatMs = 60000 / acceptedBpm;
@@ -111,64 +236,17 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     };
   }, [acceptedBpm]);
 
-  function applySpeed(value: number, fromTap = false) {
-    speedRef.current = value;
-    onSetSpeed(value);
-    if (!fromTap) setAcceptedBpm(null);
-  }
-
-  function nudge(delta: number) {
-    const next = Math.min(SPEED_MAX, Math.max(SPEED_MIN, speedRef.current + delta));
-    applySpeed(Number(next.toFixed(6)));
-  }
-
-  function handleTap() {
-    const now = Date.now();
-    const taps = tapsRef.current;
-
-    // Restart if the user paused tapping for longer than the cooldown.
-    if (taps.length > 0 && now - taps[taps.length - 1] > TAP_COOLDOWN_MS) {
-      taps.length = 0;
-      setAcceptedBpm(null);
-    }
-
-    taps.push(now);
-    if (taps.length > TAP_MAX_HISTORY) taps.shift();
-
-    // Visual pulse on every tap.
-    setPulse(true);
-    setTimeout(() => setPulse(false), 120);
-
-    const detectedBpm = deriveBpmFromTaps(taps);
-    if (detectedBpm === null) return;
-    setBpm(detectedBpm);
-
-    // Auto-apply once we have at least 4 taps and are outside the cooldown.
-    if (
-      taps.length >= TAP_MIN_TAPS &&
-      now - lastAppliedRef.current >= TAP_COOLDOWN_MS
-    ) {
-      const speed = calculateSpeedFromBpm({
-        detectedBpm,
-        pagesPerSong: Number(effectivePagesPerSong),
-        beatsPerSong,
-        numPages,
-      });
-      if (speed > 0) {
-        applySpeed(speed, true);
-        setAcceptedBpm(detectedBpm);
-        lastAppliedRef.current = now;
-      }
-    }
-  }
-
-  const activePreset = SPEED_PRESETS.find((value) => Math.abs(value - session.speed) < 1e-7);
-  const currentPresetIndex = SPEED_PRESETS.reduce((bestIndex, value, index) => {
-    const bestDistance = Math.abs(SPEED_PRESETS[bestIndex] - session.speed);
-    const distance = Math.abs(value - session.speed);
-    return distance < bestDistance ? index : bestIndex;
-  }, 0);
-  const effectivePagesPerSong = session.playbackMode === "page" ? "1" : pagesPerSong;
+  const activePreset = SCREEN_SPEED_PRESETS.find(
+    (value) => currentScreensPerMinute !== null && Math.abs(value - currentScreensPerMinute) < 0.25
+  );
+  const currentPresetIndex =
+    currentScreensPerMinute === null
+      ? null
+      : SCREEN_SPEED_PRESETS.reduce((bestIndex, value, index) => {
+          const bestDistance = Math.abs(SCREEN_SPEED_PRESETS[bestIndex] - currentScreensPerMinute);
+          const distance = Math.abs(value - currentScreensPerMinute);
+          return distance < bestDistance ? index : bestIndex;
+        }, 0);
   const currentPage = Math.min(Math.max(session.currentPage, 1), Math.max(numPages, 1));
   const progressLabel =
     session.playbackMode === "scroll"
@@ -198,7 +276,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                   : t("controls.pageMode")}
               </InlineBadge>
               <InlineBadge>
-                {t("controls.tempo")}: {session.speed.toFixed(6)}
+                {t("controls.tempo")}: {speedDisplay}
               </InlineBadge>
               <InlineBadge>
                 {t("controls.position")}: {progressLabel}
@@ -206,7 +284,11 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
             </div>
           </div>
 
-          <Badge variant="outline">#{currentPresetIndex + 1}</Badge>
+          <Badge variant="outline">
+            {session.playbackMode === "scroll" && currentPresetIndex !== null
+              ? `${SCREEN_SPEED_PRESETS[currentPresetIndex].toFixed(0)} ${t("controls.screensPerMinuteShort")}`
+              : speedDisplay}
+          </Badge>
         </div>
 
         <div className={cn("mt-4 flex flex-wrap gap-2.5", desktopDuplicateControlsClass)}>
@@ -253,77 +335,119 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <div
-              role="group"
-              aria-label={t("controls.quickTempo")}
-              className="inline-flex rounded-xl bg-muted p-1"
-            >
-              {SPEED_PRESETS.map((value, index) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => applySpeed(value)}
-                  aria-label={`${t("controls.speed")} ${index + 1}`}
-                  aria-pressed={activePreset === value}
-                  className={cn(
-                    "w-10 rounded-lg py-2 text-sm font-semibold tabular-nums transition-colors",
-                    activePreset === value
-                      ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
+          {session.playbackMode === "scroll" ? (
+            <>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label={t("controls.quickTempo")}
+                  className="inline-flex rounded-xl bg-muted p-1"
                 >
-                  {index + 1}
-                </button>
-              ))}
-            </div>
+                  {SCREEN_SPEED_PRESETS.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => applyScreensPerMinute(value)}
+                      disabled={!canControlScrollTempo}
+                      aria-label={`${t("controls.speed")} ${value}`}
+                      aria-pressed={activePreset === value}
+                      className={cn(
+                        "min-w-11 rounded-lg px-2 py-2 text-sm font-semibold tabular-nums transition-colors",
+                        activePreset === value
+                          ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
+                          : "text-muted-foreground hover:text-foreground",
+                        !canControlScrollTempo && "cursor-not-allowed opacity-50"
+                      )}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
 
-            <div
-              role="group"
-              aria-label={t("controls.manualTempoHint")}
-              className="inline-flex items-center gap-1 rounded-xl bg-muted p-1"
-            >
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-9"
-                onClick={() => nudge(-SPEED_STEP)}
-                disabled={session.speed <= SPEED_MIN}
-                aria-label={t("controls.slower")}
-              >
-                <Minus className="size-4" />
-              </Button>
-              <span className="min-w-[5rem] text-center text-sm font-semibold tabular-nums">
-                {session.speed.toFixed(6)}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-9"
-                onClick={() => nudge(SPEED_STEP)}
-                disabled={session.speed >= SPEED_MAX}
-                aria-label={t("controls.faster")}
-              >
-                <Plus className="size-4" />
-              </Button>
-            </div>
+                <div
+                  role="group"
+                  aria-label={t("controls.manualTempoHint")}
+                  className="inline-flex items-center gap-1 rounded-xl bg-muted p-1"
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-9"
+                    onClick={() => nudgeScrollTempo(-SCREEN_SPEED_STEP)}
+                    disabled={!canControlScrollTempo}
+                    aria-label={t("controls.slower")}
+                  >
+                    <Minus className="size-4" />
+                  </Button>
+                  <span className="min-w-[7rem] text-center text-sm font-semibold tabular-nums">
+                    {currentScreensPerMinute !== null ? currentScreensPerMinute.toFixed(1) : "—"}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-9"
+                    onClick={() => nudgeScrollTempo(SCREEN_SPEED_STEP)}
+                    disabled={!canControlScrollTempo}
+                    aria-label={t("controls.faster")}
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                </div>
 
-            <Button
-              variant="secondary"
-              onClick={handleTap}
-              disabled={numPages === 0}
-              className={cn(
-                "min-w-[7rem] transition-transform",
-                pulse && "scale-105 ring-2 ring-primary ring-offset-2 ring-offset-background"
+                <Button
+                  variant="secondary"
+                  onClick={handleTap}
+                  disabled={!canControlScrollTempo}
+                  className={cn(
+                    "min-w-[7rem] transition-transform",
+                    pulse && "scale-105 ring-2 ring-primary ring-offset-2 ring-offset-background"
+                  )}
+                  aria-label={t("controls.tapTempo")}
+                >
+                  {bpm ?? "—"} <span className="text-xs">{t("controls.bpm")}</span>
+                </Button>
+              </div>
+
+              <p className="mt-3 text-sm text-muted-foreground">{speedHelper}</p>
+
+              {!canControlScrollTempo && (
+                <p className="mt-2 text-sm text-muted-foreground">{t("controls.loadDocumentFirst")}</p>
               )}
-              aria-label={t("controls.tapTempo")}
-            >
-              {bpm ?? "—"} <span className="text-xs">{t("controls.bpm")}</span>
-            </Button>
-          </div>
+            </>
+          ) : (
+            <>
+              <div
+                role="group"
+                aria-label={t("controls.manualTempoHint")}
+                className="mt-4 inline-flex items-center gap-1 rounded-xl bg-muted p-1"
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9"
+                  onClick={() => nudgePageTempo(PAGE_SECONDS_STEP)}
+                  disabled={currentSecondsPerPage === null}
+                  aria-label={t("controls.slower")}
+                >
+                  <Minus className="size-4" />
+                </Button>
+                <span className="min-w-[7rem] text-center text-sm font-semibold tabular-nums">
+                  {currentSecondsPerPage !== null ? currentSecondsPerPage.toFixed(1) : "—"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9"
+                  onClick={() => nudgePageTempo(-PAGE_SECONDS_STEP)}
+                  disabled={currentSecondsPerPage === null}
+                  aria-label={t("controls.faster")}
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </div>
 
-          {numPages === 0 && (
-            <p className="mt-3 text-sm text-muted-foreground">{t("controls.tapTempoHint")}</p>
+              <p className="mt-3 text-sm text-muted-foreground">{speedHelper}</p>
+            </>
           )}
         </div>
       </div>
@@ -383,20 +507,20 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex min-w-[9rem] flex-col gap-1">
                 <label
-                  htmlFor="pagesPerSong"
+                  htmlFor="screensPerSong"
                   className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
                 >
-                  {t("controls.pagesPerSong")}
+                  {t("controls.screensPerSong")}
                 </label>
                 <Input
-                  id="pagesPerSong"
+                  id="screensPerSong"
                   type="number"
                   min={0.1}
                   step={0.1}
                   inputMode="decimal"
-                  value={effectivePagesPerSong}
-                  onChange={(e) => setPagesPerSong(e.target.value)}
-                  disabled={numPages === 0 || session.playbackMode === "page"}
+                  value={screensPerSong}
+                  onChange={(e) => setScreensPerSong(e.target.value)}
+                  disabled={!canControlScrollTempo}
                   className="h-10"
                 />
               </div>
@@ -415,14 +539,15 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                       key={value}
                       type="button"
                       onClick={() => setBeatsPerSong(value)}
-                      disabled={numPages === 0}
+                      disabled={!canControlScrollTempo}
                       title={t(labelKey)}
                       aria-pressed={beatsPerSong === value}
                       className={cn(
                         "rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
                         beatsPerSong === value
                           ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
-                          : "text-muted-foreground hover:text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                        !canControlScrollTempo && "cursor-not-allowed opacity-50"
                       )}
                     >
                       {value}
@@ -442,7 +567,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
   );
 });
 
-function InlineBadge({ children }: { children: React.ReactNode }) {
+function InlineBadge({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1 text-sm font-medium text-foreground">
       {children}
