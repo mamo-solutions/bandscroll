@@ -6,6 +6,7 @@ export type SongMarker = {
   id: string;
   title: string;
   page: number; // 1-indexed page number in the PDF
+  speed?: number; // scroll speed (progress/second) to restore when this marker is loaded
 };
 
 export type SessionState = {

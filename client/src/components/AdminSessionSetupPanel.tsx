@@ -31,6 +31,7 @@ import type {
   PlaybackMode,
   SessionBackgroundMode,
   SessionState,
+  SongMarker,
 } from "@/types/session";
 
 type Props = {
@@ -40,7 +41,7 @@ type Props = {
   onAddMarker: (title: string, page: number) => void;
   onDeleteMarker: (id: string) => void;
   onOpenFilePicker: () => void;
-  onSeekToMarker: (page: number) => void;
+  onSeekToMarker: (marker: SongMarker) => void;
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
   onSetBackgroundMode: (backgroundMode: SessionBackgroundMode) => void;
   onUpdateDocumentDescription: (documentDescription: string) => Promise<void>;
@@ -376,7 +377,7 @@ export function AdminSessionSetupPanel({
                   >
                     <button
                       type="button"
-                      onClick={() => onSeekToMarker(marker.page)}
+                      onClick={() => onSeekToMarker(marker)}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-primary"
                       title={t("controls.seekToMarker")}
                     >

@@ -333,7 +333,7 @@ export function AdminSessionControl() {
     }
 
     normalizedTempoKeyRef.current = normalizationKey;
-    setSpeed(normalizedSpeed);
+    setSpeed(normalizedSpeed, { persistToMarker: false });
   }, [session?.id, session?.pdfUrl, session?.speed, scrollMetrics]);
 
   useEffect(() => {
@@ -522,9 +522,20 @@ export function AdminSessionControl() {
     socket.emit("admin-set-page", { sessionId: id, page: nextPage });
   }
 
-  function setSpeed(speed: number) {
+  function setSpeed(speed: number, opts: { persistToMarker?: boolean } = {}) {
+    const { persistToMarker = true } = opts;
     socket.emit("admin-set-speed", { sessionId: id, speed });
     patchSession({ speed });
+
+    // While a song is playing, remember the host's chosen tempo on its marker so
+    // it is restored automatically the next time that marker is loaded.
+    if (!persistToMarker || !stateRef.current?.playing) return;
+    const currentMarker = getCurrentMarker();
+    if (!currentMarker || currentMarker.speed === speed) return;
+    const next = (stateRef.current.markers ?? []).map((marker) =>
+      marker.id === currentMarker.id ? { ...marker, speed } : marker
+    );
+    setMarkers(next);
   }
 
   function setPlaybackMode(playbackMode: PlaybackMode) {
@@ -590,8 +601,35 @@ export function AdminSessionControl() {
     setMarkers(next);
   }
 
-  function seekToMarker(page: number) {
+  /** Page the host is currently positioned on, across scroll/page modes. */
+  function getCurrentPage() {
+    return stateRef.current?.playbackMode === "page"
+      ? stateRef.current.currentPage
+      : viewerRef.current?.getCurrentPage() ??
+          progressToNearestPage(liveProgressRef.current, Math.max(numPagesRef.current, 1));
+  }
+
+  /** The marker whose song is currently playing: the last marker at or before
+   *  the current page. Null when positioned before the first marker. */
+  function getCurrentMarker(): SongMarker | null {
+    const markers = (stateRef.current?.markers ?? []).slice().sort((a, b) => a.page - b.page);
+    if (markers.length === 0) return null;
+    const currentPage = getCurrentPage();
+    let current: SongMarker | null = null;
+    for (const marker of markers) {
+      if (marker.page <= currentPage) current = marker;
+      else break;
+    }
+    return current;
+  }
+
+  function seekToMarker(marker: SongMarker) {
+    const { page } = marker;
     if (!numPages || page < 1 || page > numPages) return;
+    // Restore the tempo captured for this song, if any, without re-persisting it.
+    if (typeof marker.speed === "number" && marker.speed > 0) {
+      setSpeed(marker.speed, { persistToMarker: false });
+    }
     if (stateRef.current?.playbackMode === "page") {
       goToPage(page);
       return;
@@ -605,14 +643,9 @@ export function AdminSessionControl() {
     const markers = (stateRef.current?.markers ?? []).slice().sort((a, b) => a.page - b.page);
     if (markers.length === 0) return;
 
-    const currentPage =
-      stateRef.current?.playbackMode === "page"
-        ? stateRef.current.currentPage
-        : viewerRef.current?.getCurrentPage() ??
-          progressToNearestPage(liveProgressRef.current, Math.max(numPages, 1));
-
+    const currentPage = getCurrentPage();
     const nextMarker = markers.find((marker) => marker.page > currentPage) ?? markers[0];
-    seekToMarker(nextMarker.page);
+    seekToMarker(nextMarker);
   }
 
   async function handleLogout() {
@@ -832,7 +865,7 @@ export function AdminSessionControl() {
                     <button
                       key={marker.id}
                       type="button"
-                      onClick={() => seekToMarker(marker.page)}
+                      onClick={() => seekToMarker(marker)}
                       className={cn(
                         "flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
                         fullscreenBlackBackground ? "hover:bg-white/8" : "hover:bg-muted"
