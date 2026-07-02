@@ -2,7 +2,7 @@
 
 **Real-time synchronized PDF scrolling for live sessions.**
 
-[![Tests](https://github.com/mamo-solutions/bandscroll/actions/workflows/ci-release.yml/badge.svg)](https://github.com/mamo-solutions/bandscroll/actions/workflows/ci-release.yml)
+[![Tests](https://github.com/mamo-solutions/bandscroll/actions/workflows/ci-release.yml/badge.svg?branch=main&event=push)](https://github.com/mamo-solutions/bandscroll/actions/workflows/ci-release.yml?query=branch%3Amain)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 BandScroll lets a host — a conductor, band leader, or presenter — open a PDF

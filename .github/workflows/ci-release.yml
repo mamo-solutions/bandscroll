@@ -44,7 +44,8 @@ jobs:
       - name: Read release version
         id: version
         run: |
-          echo "value=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+          VERSION="$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Run test suite
         run: npm test

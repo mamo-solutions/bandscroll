@@ -182,9 +182,8 @@ const headCommit = git(["rev-parse", "HEAD"]);
 const state = existsSync(stateFile) ? readJson(stateFile) : { lastProcessedCommit: headCommit };
 const lastProcessedCommit =
   typeof state.lastProcessedCommit === "string" ? state.lastProcessedCommit : headCommit;
-
-const commits = readCommitsSince(lastProcessedCommit);
-const bump = determineBump(commits);
+const commits = shouldSkip ? [] : readCommitsSince(lastProcessedCommit);
+const bump = shouldSkip ? null : determineBump(commits);
 const nextVersion = bump ? incrementVersion(currentVersion, bump) : currentVersion;
 
 if (apply && !shouldSkip) {
