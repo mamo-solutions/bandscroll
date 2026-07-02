@@ -1,6 +1,6 @@
 {
   "name": "bandscroll",
-  "version": "1.10.2",
+  "version": "1.10.3",
   "private": true,
   "license": "Apache-2.0",
   "description": "Realtime synchronized PDF scrolling for live sessions (PWA MVP)",

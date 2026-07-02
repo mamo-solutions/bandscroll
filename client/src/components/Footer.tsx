@@ -22,6 +22,7 @@ type FooterProps = {
 
 export function Footer({ inverse = false, className }: FooterProps) {
   const { t, lang, setLang } = useI18n();
+  const displayVersion = APP_VERSION.split("+")[0] ?? APP_VERSION;
 
   // Split the localized credit template around its {link} placeholder so we can
   // render a real anchor in the middle.
@@ -70,7 +71,7 @@ export function Footer({ inverse = false, className }: FooterProps) {
               inverse ? "text-white/45" : "text-muted-foreground"
             )}
           >
-            {APP_VERSION}
+            {displayVersion}
           </span>
         </p>
 
