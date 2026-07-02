@@ -11,6 +11,13 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { SessionBackgroundMode } from "@/types/session";
+import {
+  getEffectivePageHeights,
+  getPageTopOffsets,
+  getReservedPageHeights,
+  getSinglePageWidth,
+  getVisiblePageRange,
+} from "./pdfViewerLayout";
 
 // Errors-only verbosity: silences harmless "TT: undefined function" font
 // warnings from PDF.js. Module-level constant so react-pdf doesn't reload.
@@ -84,15 +91,16 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   // CSS display width of each page/image wrapper (responsive).
   const [displayWidth, setDisplayWidth] = useState(800);
   const [containerHeight, setContainerHeight] = useState(0);
-  // Page aspect ratio (height / width), measured from the first page. Pages in a
-  // setlist PDF are uniform, so one value reserves space for all of them.
-  const [aspect, setAspect] = useState<number | null>(null);
-  const aspectRef = useRef<number | null>(null);
+  const [pageAspects, setPageAspects] = useState<number[]>([]);
+  const [measuredPageHeights, setMeasuredPageHeights] = useState<(number | null)[]>([]);
   const [range, setRange] = useState({ start: 0, end: 0 });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const rafPending = useRef(false);
   const readyRef = useRef(false);
+  const fileLoadIdRef = useRef(0);
+  const pageHeightObserverRef = useRef<ResizeObserver | null>(null);
+  const observedPageElementsRef = useRef<(HTMLDivElement | null)[]>([]);
   const { t } = useI18n();
 
   const isImage = IMAGE_RE.test(fileUrl);
@@ -103,30 +111,83 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   // Reset everything whenever the file changes (initial load or swap).
   useEffect(() => {
+    fileLoadIdRef.current += 1;
     setLoading(true);
     setError(null);
     setNumPages(0);
-    setAspect(null);
-    aspectRef.current = null;
+    setPageAspects([]);
+    setMeasuredPageHeights([]);
     setRange({ start: 0, end: 0 });
     pageRefs.current = [];
+    observedPageElementsRef.current = [];
     readyRef.current = false;
   }, [fileUrl]);
 
   // Ready = safe to drive programmatic scrolling. Avoids scrolling before the
   // document has real geometry (which the conductor's loop would otherwise spam).
   useEffect(() => {
-    readyRef.current = isImage ? !loading : aspect != null;
-  }, [isImage, loading, aspect]);
+    readyRef.current = isImage ? !loading : numPages > 0 && pageAspects.length === numPages;
+  }, [isImage, loading, numPages, pageAspects]);
 
-  const reservedHeight = aspect ? Math.max(1, Math.round(displayWidth * aspect)) : undefined;
-  const singlePageWidth =
-    singlePageMode && aspect && containerHeight > 0
-      ? Math.max(
-          280,
-          Math.min(displayWidth, Math.floor((containerHeight - (chromeFlush ? 0 : 24)) / aspect))
-        )
-      : displayWidth;
+  const predictedPageHeights = getReservedPageHeights(displayWidth, pageAspects);
+  const effectivePageHeights = getEffectivePageHeights(predictedPageHeights, measuredPageHeights);
+  const pageTopOffsets = getPageTopOffsets(effectivePageHeights, PAGE_TOP, PAGE_GAP);
+  const currentPageAspect = pageAspects[clampedVisiblePage - 1] ?? pageAspects[0] ?? null;
+  const singlePageWidth = getSinglePageWidth(
+    displayWidth,
+    containerHeight,
+    currentPageAspect,
+    chromeFlush
+  );
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      setMeasuredPageHeights((current) => {
+        let changed = false;
+        const next = current.slice();
+        for (const entry of entries) {
+          const index = Number((entry.target as HTMLElement).dataset.pageIndex);
+          if (!Number.isInteger(index) || index < 0) continue;
+          const measuredHeight = Math.max(1, Math.round(entry.contentRect.height));
+          if (next[index] !== measuredHeight) {
+            next[index] = measuredHeight;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    });
+    pageHeightObserverRef.current = observer;
+
+    for (const [index, el] of pageRefs.current.entries()) {
+      if (!el) continue;
+      el.dataset.pageIndex = String(index);
+      observer.observe(el);
+      observedPageElementsRef.current[index] = el;
+    }
+
+    return () => {
+      observer.disconnect();
+      pageHeightObserverRef.current = null;
+    };
+  }, []);
+
+  const setPageRef = useCallback((index: number, el: HTMLDivElement | null) => {
+    const observer = pageHeightObserverRef.current;
+    const previousEl = observedPageElementsRef.current[index];
+    if (observer && previousEl && previousEl !== el) {
+      observer.unobserve(previousEl);
+    }
+
+    pageRefs.current[index] = el;
+    observedPageElementsRef.current[index] = el;
+
+    if (el) {
+      el.dataset.pageIndex = String(index);
+      observer?.observe(el);
+    }
+  }, []);
 
   const maxScroll = () => {
     if (singlePageMode) return 1;
@@ -136,24 +197,27 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   };
 
   const getProgressForPage = (page: number) => {
-    if (singlePageMode || !pageRefs.current[page - 1]) return pageProgress(page, numPages);
+    if (singlePageMode) return pageProgress(page, numPages);
     const el = scrollRef.current;
     const pageEl = pageRefs.current[page - 1];
-    if (!el || !pageEl) return 0;
-    return clamp01(pageEl.offsetTop / maxScroll());
+    if (!el) return 0;
+    if (pageEl) return clamp01(pageEl.offsetTop / maxScroll());
+    const pageTop = pageTopOffsets[page - 1];
+    if (pageTop == null) return pageProgress(page, numPages);
+    return clamp01(pageTop / maxScroll());
   };
 
   const getCurrentPage = () => {
     if (singlePageMode) return clampedVisiblePage;
     const el = scrollRef.current;
-    if (!el || numPages <= 1) return 1;
+    if (!el || numPages <= 1 || pageTopOffsets.length === 0) return 1;
 
     let nearestPage = 1;
     let nearestDistance = Number.POSITIVE_INFINITY;
     for (let index = 0; index < numPages; index++) {
-      const pageEl = pageRefs.current[index];
-      if (!pageEl) continue;
-      const distance = Math.abs(pageEl.offsetTop - el.scrollTop);
+      const pageTop = pageRefs.current[index]?.offsetTop ?? pageTopOffsets[index];
+      if (pageTop == null) continue;
+      const distance = Math.abs(pageTop - el.scrollTop);
       if (distance < nearestDistance) {
         nearestDistance = distance;
         nearestPage = index + 1;
@@ -182,8 +246,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           return;
         }
         const pageEl = pageRefs.current[page - 1];
-        if (!pageEl) return;
-        el.scrollTop = pageEl.offsetTop;
+        const pageTop = pageEl?.offsetTop ?? pageTopOffsets[page - 1];
+        if (pageTop == null) return;
+        el.scrollTop = pageTop;
       },
       getProgressForPage,
       getCurrentPage,
@@ -197,7 +262,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return numPages;
       },
     }),
-    [clampedVisiblePage, getProgressForPage, numPages, singlePageMode]
+    [clampedVisiblePage, getProgressForPage, numPages, pageTopOffsets, singlePageMode]
   );
 
   // Responsive display width — only drives CSS sizing of already-rasterized
@@ -225,13 +290,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       return;
     }
     const el = scrollRef.current;
-    if (!el || aspect == null || numPages === 0) return;
-    const row = Math.max(1, Math.round(displayWidth * aspect)) + PAGE_GAP;
-    const top = el.scrollTop - PAGE_TOP;
-    const start = Math.max(0, Math.floor(top / row) - OVERSCAN);
-    const end = Math.min(numPages - 1, Math.floor((top + el.clientHeight) / row) + OVERSCAN);
-    setRange((r) => (r.start === start && r.end === end ? r : { start, end }));
-  }, [aspect, clampedVisiblePage, numPages, displayWidth, singlePageMode]);
+    if (!el || numPages === 0 || effectivePageHeights.length !== numPages) return;
+    const nextRange = getVisiblePageRange(
+      el.scrollTop,
+      el.clientHeight,
+      pageTopOffsets,
+      effectivePageHeights,
+      OVERSCAN
+    );
+    setRange((current) =>
+      current.start === nextRange.start && current.end === nextRange.end ? current : nextRange
+    );
+  }, [clampedVisiblePage, effectivePageHeights, numPages, pageTopOffsets, singlePageMode]);
 
   // Recompute the visible window when geometry changes.
   useEffect(() => {
@@ -329,7 +399,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           )}
           <div
             ref={(el) => {
-              pageRefs.current[0] = el;
+              setPageRef(0, el);
             }}
             className={cn(backgroundMode === "black" && "rounded-lg bg-black")}
           >
@@ -357,10 +427,20 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           file={fileUrl}
           className={cn(singlePageMode && "h-full")}
           options={DOCUMENT_OPTIONS}
-          onLoadSuccess={({ numPages }) => {
-            setNumPages(numPages);
-            setLoading(false);
-            onDocumentLoad?.(numPages);
+          onLoadSuccess={async (pdf) => {
+            const loadId = fileLoadIdRef.current;
+            try {
+              const nextPageAspects = await loadPdfPageAspects(pdf);
+              if (loadId !== fileLoadIdRef.current) return;
+              setPageAspects(nextPageAspects);
+              setNumPages(pdf.numPages);
+              setLoading(false);
+              onDocumentLoad?.(pdf.numPages);
+            } catch (e) {
+              if (loadId !== fileLoadIdRef.current) return;
+              setError(e instanceof Error ? e.message : "pdf-metrics");
+              setLoading(false);
+            }
           }}
           onLoadError={(e) => {
             setError(e.message);
@@ -384,10 +464,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                 <div
                   key={i}
                   ref={(el) => {
-                    pageRefs.current[i] = el;
+                    setPageRef(i, el);
                   }}
                   className={cn(
-                    "pdf-page-fit overflow-hidden",
+                    "pdf-page-fit",
                     chromeFlush || useBlackCanvasChrome
                       ? "rounded-none shadow-none"
                       : "rounded-lg shadow-[var(--shadow-lift)]",
@@ -395,7 +475,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                   )}
                   style={{
                     width: singlePageMode ? singlePageWidth : displayWidth,
-                    height: singlePageMode ? undefined : reservedHeight,
+                    ...(singlePageMode
+                      ? {}
+                      : mounted
+                        ? { minHeight: effectivePageHeights[i] ?? predictedPageHeights[i] }
+                        : { height: effectivePageHeights[i] ?? predictedPageHeights[i] }),
                   }}
                 >
                   {mounted && (
@@ -413,16 +497,6 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                       }
                       canvasBackground={backgroundMode === "black" ? "#000000" : undefined}
                       className={cn(backgroundMode === "black" && "[&>canvas]:bg-black")}
-                      onLoadSuccess={(page) => {
-                        if (aspectRef.current == null) {
-                          const w = page.originalWidth || page.width;
-                          const h = page.originalHeight || page.height;
-                          if (w > 0 && h > 0) {
-                            aspectRef.current = h / w;
-                            setAspect(h / w);
-                          }
-                        }
-                      }}
                     />
                   )}
                 </div>
@@ -449,4 +523,24 @@ function clampPage(page: number, numPages: number): number {
 function pageProgress(page: number, numPages: number): number {
   if (numPages <= 1) return 0;
   return clamp01((clampPage(page, numPages) - 1) / (numPages - 1));
+}
+
+type PdfPageLike = {
+  getViewport: (params: { scale: number }) => { width: number; height: number };
+};
+
+type PdfDocumentLike = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfPageLike>;
+};
+
+async function loadPdfPageAspects(pdf: PdfDocumentLike): Promise<number[]> {
+  return Promise.all(
+    Array.from({ length: pdf.numPages }, async (_, index) => {
+      const page = await pdf.getPage(index + 1);
+      const viewport = page.getViewport({ scale: 1 });
+      if (viewport.width <= 0 || viewport.height <= 0) return 1;
+      return viewport.height / viewport.width;
+    })
+  );
 }

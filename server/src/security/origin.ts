@@ -7,6 +7,13 @@ type AllowedOrigin = {
   websocketOrigin: string;
 };
 
+const DEV_APP_ORIGINS = [
+  "http://localhost:5173",
+  "ws://localhost:5173",
+  "http://127.0.0.1:5173",
+  "ws://127.0.0.1:5173",
+] as const;
+
 function normalizeOrigin(value: string): string | null {
   try {
     return new URL(value).origin;
@@ -25,6 +32,13 @@ function allowedOrigin(): AllowedOrigin | null {
   if (!origin) return null;
   const websocketOrigin = origin.replace(/^http/i, "ws");
   return { origin, websocketOrigin };
+}
+
+function allowedOrigins(): string[] {
+  const allowed = allowedOrigin();
+  const origins = allowed ? [allowed.origin, allowed.websocketOrigin] : [];
+  if (!env.isProduction) origins.push(...DEV_APP_ORIGINS);
+  return [...new Set(origins)];
 }
 
 function requestOriginFromHeaders(headers: IncomingMessage["headers"]): string | null {
@@ -50,17 +64,15 @@ function matchesAllowedOrigin(candidateOrigin: string, allowedOriginValue: strin
 }
 
 export function allowedConnectSources(): string[] {
-  const allowed = allowedOrigin();
-  if (!allowed) return ["'self'"];
-  return [...new Set(["'self'", allowed.origin, allowed.websocketOrigin])];
+  const origins = allowedOrigins();
+  if (origins.length === 0) return ["'self'"];
+  return [...new Set(["'self'", ...origins])];
 }
 
 export function isTrustedRequestOrigin(req: Request): boolean {
-  const allowed = allowedOrigin();
-  if (!allowed) return false;
   const candidateOrigin = requestOriginFromHeaders(req.headers);
   if (!candidateOrigin) return false;
-  return matchesAllowedOrigin(candidateOrigin, allowed.origin);
+  return allowedOrigins().some((allowed) => matchesAllowedOrigin(candidateOrigin, allowed));
 }
 
 export const requireTrustedAdminOrigin: RequestHandler = (
@@ -77,10 +89,7 @@ export const requireTrustedAdminOrigin: RequestHandler = (
 };
 
 export function isAllowedSocketOrigin(originHeader: string | undefined): boolean {
-  const allowed = allowedOrigin();
-  if (!allowed) return false;
-
   const normalizedOrigin = normalizeHeaderOrigin(originHeader);
   if (!normalizedOrigin) return !env.isProduction;
-  return matchesAllowedOrigin(normalizedOrigin, allowed.origin);
+  return allowedOrigins().some((allowed) => matchesAllowedOrigin(normalizedOrigin, allowed));
 }
