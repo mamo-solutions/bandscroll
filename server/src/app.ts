@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { createServer, type Server as HttpServer } from "node:http";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { env } from "./env.js";
 import { sessionMiddleware } from "./auth.js";
@@ -14,6 +14,8 @@ import { publicRouter } from "./routes/publicRoutes.js";
 import { adminRouter } from "./routes/adminRoutes.js";
 import { initSocketServer } from "./sockets/socketServer.js";
 import { logger } from "./lib/logger.js";
+import { getSessionByCode } from "./sessionStore.js";
+import { injectShareCard } from "./lib/shareCard.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { allowedConnectSources } from "./security/origin.js";
@@ -113,10 +115,31 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
         },
       })
     );
+    const indexHtmlPath = resolve(clientDist, "index.html");
+
+    // Public session deep-links: serve the SPA shell but rewrite the share-card
+    // meta tags with the session name/description so link unfurlers (which don't
+    // run our JS) show meaningful previews. Falls back to the default shell when
+    // the code is unknown or the file can't be read.
+    app.get("/session/:code", (req, res, next) => {
+      const session = getSessionByCode(String(req.params.code));
+      if (!session) return next();
+      let html: string;
+      try {
+        html = readFileSync(indexHtmlPath, "utf8");
+      } catch (err) {
+        logger.warn("share-card: failed to read index.html", { err });
+        return next();
+      }
+      const canonicalUrl = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/session/${session.code}`;
+      res.setHeader("Cache-Control", "no-cache");
+      res.type("html").send(injectShareCard(html, session, canonicalUrl));
+    });
+
     // SPA fallback for client-side routing (anything not /api or /uploads).
     app.get(/^\/(?!api|uploads).*/, (_req, res) => {
       res.setHeader("Cache-Control", "no-cache");
-      res.sendFile(resolve(clientDist, "index.html"));
+      res.sendFile(indexHtmlPath);
     });
   }
 
