@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { env } from "../env.js";
 import { logger } from "./logger.js";
 import { extractServedFilename, extractUploadFilename } from "../uploads/cleanup.js";
 import type { SessionState } from "../types.js";
+import type { Image, SKRSContext2D } from "@napi-rs/canvas";
 
 const PREVIEW_WIDTH = 1200;
 const PREVIEW_HEIGHT = 630;
@@ -17,7 +16,21 @@ const HERO_HEIGHT = 518;
 const HERO_PLACEHOLDER_TEXT = "Preview unavailable";
 const SHARE_PREVIEW_TEMPLATE_VERSION = "v2";
 
-type PreviewImage = Awaited<ReturnType<typeof loadImage>>;
+type CanvasModule = typeof import("@napi-rs/canvas");
+type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+
+let canvasModulePromise: Promise<CanvasModule> | undefined;
+let pdfJsModulePromise: Promise<PdfJsModule> | undefined;
+
+async function getCanvasModule(): Promise<CanvasModule> {
+  canvasModulePromise ??= import("@napi-rs/canvas");
+  return canvasModulePromise;
+}
+
+async function getPdfJsModule(): Promise<PdfJsModule> {
+  pdfJsModulePromise ??= import("pdfjs-dist/legacy/build/pdf.mjs");
+  return pdfJsModulePromise;
+}
 
 function ensureSharePreviewDir(previewDir: string = env.SHARE_PREVIEW_DIR): void {
   if (!existsSync(previewDir)) {
@@ -105,6 +118,8 @@ function roundedRect(
 }
 
 async function renderPdfFirstPage(uploadPath: string): Promise<Buffer> {
+  const { createCanvas } = await getCanvasModule();
+  const { getDocument } = await getPdfJsModule();
   const data = new Uint8Array(readFileSync(uploadPath));
   const loadingTask = getDocument({
     data,
@@ -136,7 +151,8 @@ async function renderPdfFirstPage(uploadPath: string): Promise<Buffer> {
 async function renderSourceImage(
   session: SessionState,
   uploadPath: string
-): Promise<PreviewImage | undefined> {
+): Promise<Image | undefined> {
+  const { loadImage } = await getCanvasModule();
   const uploadFilename = extractUploadFilename(session.pdfUrl);
   if (!uploadFilename) {
     throw new Error("missing-upload-filename");
@@ -186,7 +202,7 @@ function drawFallbackHero(ctx: SKRSContext2D): void {
 function drawPreviewFrame(
   ctx: SKRSContext2D,
   session: SessionState,
-  image?: PreviewImage
+  image?: Image
 ): void {
   const backgroundGradient = ctx.createLinearGradient(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
   backgroundGradient.addColorStop(0, "#fdf8f3");
@@ -357,6 +373,7 @@ export async function generateSessionSharePreview(
   uploadDir: string = env.UPLOAD_DIR,
   previewDir: string = env.SHARE_PREVIEW_DIR
 ): Promise<boolean> {
+  const { createCanvas } = await getCanvasModule();
   if (!session.pdfUrl) return false;
 
   const uploadFilename = extractUploadFilename(session.pdfUrl);
