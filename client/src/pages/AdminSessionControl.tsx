@@ -77,6 +77,7 @@ export function AdminSessionControl() {
   const [distractionFree, setDistractionFree] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [savingSessionDetails, setSavingSessionDetails] = useState(false);
   const [savingDocumentDescription, setSavingDocumentDescription] = useState(false);
   const [scrollMetrics, setScrollMetrics] = useState<PdfViewerScrollMetrics | null>(null);
   const [shortcutBindings, setShortcutBindings] = useState<AdminShortcutBindings>(() =>
@@ -749,6 +750,25 @@ export function AdminSessionControl() {
     }
   }
 
+  async function updateSessionDetails(title: string, description: string) {
+    setSavingSessionDetails(true);
+    setErrorMessage(null);
+    try {
+      const updated = await api.updateSessionDetails(id, { title, description });
+      stateRef.current = updated;
+      setSession(updated);
+      setAnnouncement(t("control.sessionDetailsSaved"));
+    } catch (error) {
+      if (error instanceof ApiError && error.message === "title-required") {
+        setErrorMessage(t("control.sessionTitleRequired"));
+      } else {
+        setErrorMessage(t("control.sessionDetailsSaveFailed"));
+      }
+    } finally {
+      setSavingSessionDetails(false);
+    }
+  }
+
   async function updateDocumentDescription(documentDescription: string) {
     setSavingDocumentDescription(true);
     setErrorMessage(null);
@@ -1056,9 +1076,11 @@ export function AdminSessionControl() {
               onSetPlaybackMode={setPlaybackMode}
               onSetBackgroundMode={setBackgroundMode}
               onSetAutoStopAtSongEnd={setAutoStopAtSongEnd}
+              onUpdateSessionDetails={updateSessionDetails}
               onUpdateDocumentDescription={updateDocumentDescription}
               onShortcutBindingChange={handleShortcutBindingChange}
               onShortcutPresetChange={handleShortcutPresetChange}
+              savingSessionDetails={savingSessionDetails}
               savingDocumentDescription={savingDocumentDescription}
               shortcutBindings={shortcutBindings}
               shortcutPreset={shortcutPreset}

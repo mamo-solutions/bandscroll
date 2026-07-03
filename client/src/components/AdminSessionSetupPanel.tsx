@@ -46,11 +46,13 @@ type Props = {
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
   onSetBackgroundMode: (backgroundMode: SessionBackgroundMode) => void;
   onSetAutoStopAtSongEnd: (autoStopAtSongEnd: boolean) => void;
+  onUpdateSessionDetails: (title: string, description: string) => Promise<void>;
   onUpdateDocumentDescription: (documentDescription: string) => Promise<void>;
   onShortcutBindingChange: (slot: AdminShortcutSlot, code: string) => void;
   onShortcutPresetChange: (
     presetId: Exclude<AdminShortcutPresetId, "custom">,
   ) => void;
+  savingSessionDetails: boolean;
   shortcutBindings: AdminShortcutBindings;
   shortcutPreset: AdminShortcutPresetId;
   savingDocumentDescription: boolean;
@@ -67,9 +69,11 @@ export function AdminSessionSetupPanel({
   onSetPlaybackMode,
   onSetBackgroundMode,
   onSetAutoStopAtSongEnd,
+  onUpdateSessionDetails,
   onUpdateDocumentDescription,
   onShortcutBindingChange,
   onShortcutPresetChange,
+  savingSessionDetails,
   shortcutBindings,
   shortcutPreset,
   savingDocumentDescription,
@@ -77,6 +81,8 @@ export function AdminSessionSetupPanel({
   const { t } = useI18n();
   const [markerTitle, setMarkerTitle] = useState("");
   const [markerPage, setMarkerPage] = useState("");
+  const [title, setTitle] = useState(session.title);
+  const [description, setDescription] = useState(session.description ?? "");
   const [documentDescription, setDocumentDescription] = useState(
     session.documentDescription ?? ""
   );
@@ -111,6 +117,14 @@ export function AdminSessionSetupPanel({
   const selectedDocumentIsImage = !!session.pdfUrl && /\.(png|jpe?g|webp|gif|avif)$/i.test(session.pdfUrl);
 
   useEffect(() => {
+    setTitle(session.title);
+  }, [session.title]);
+
+  useEffect(() => {
+    setDescription(session.description ?? "");
+  }, [session.description]);
+
+  useEffect(() => {
     setDocumentDescription(session.documentDescription ?? "");
   }, [session.documentDescription]);
 
@@ -129,6 +143,55 @@ export function AdminSessionSetupPanel({
         </CardHeader>
 
         <CardContent className="flex flex-col gap-5 pt-4">
+          <section className="rounded-xl border border-border/70 bg-muted/35 px-4 pb-4 pt-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-heading text-base font-semibold">
+                  {t("control.sessionDetails")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("control.sessionDetailsHint")}
+                </p>
+              </div>
+              <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                <Music className="size-4" />
+              </span>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              <label htmlFor="session-title" className="text-sm font-medium text-foreground">
+                {t("dash.titleLabel")}
+              </label>
+              <Input
+                id="session-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={t("dash.titlePlaceholder")}
+              />
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              <label htmlFor="session-description" className="text-sm font-medium text-foreground">
+                {t("dash.descriptionLabel")}
+              </label>
+              <Input
+                id="session-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={t("dash.optional")}
+              />
+            </div>
+
+            <Button
+              variant="secondary"
+              className="mt-4"
+              disabled={savingSessionDetails}
+              onClick={() => onUpdateSessionDetails(title, description)}
+            >
+              {savingSessionDetails ? t("common.saving") : t("common.save")}
+            </Button>
+          </section>
+
           <section className="rounded-xl border border-border/70 bg-muted/35 px-4 pb-4 pt-5">
             <div className="flex items-start justify-between gap-3">
               <div>

@@ -187,6 +187,13 @@ export const de = {
   "control.viewerHint": "Die Live-Steuerung bleibt direkt unter der Vorschau.",
   "control.setupTitle": "Setup",
   "control.setupDesc": "Datei, Modus und Marker bleiben separat von der Live-Steuerung.",
+  "control.sessionDetails": "Session-Details",
+  "control.sessionDetailsHint":
+    "Passe den öffentlichen Namen und die Beschreibung dieser Session jederzeit an.",
+  "control.sessionTitleRequired": "Ein Session-Titel ist erforderlich.",
+  "control.sessionDetailsSaved": "Session-Details gespeichert.",
+  "control.sessionDetailsSaveFailed":
+    "Die Session-Details konnten nicht gespeichert werden.",
   "control.document": "Dokument",
   "control.documentReady": "PDF oder Bild ist mit dieser Session verbunden.",
   "control.documentMissing": "Noch keine Datei verbunden. Füge eine PDF oder ein Bild hinzu.",
@@ -413,6 +420,12 @@ export const en: Record<TKey, string> = {
   "control.viewerHint": "Live controls stay attached to the preview.",
   "control.setupTitle": "Setup",
   "control.setupDesc": "Keep file, mode, and markers separate from live transport.",
+  "control.sessionDetails": "Session details",
+  "control.sessionDetailsHint":
+    "Adjust the public name and description for this session whenever needed.",
+  "control.sessionTitleRequired": "A session title is required.",
+  "control.sessionDetailsSaved": "Session details saved.",
+  "control.sessionDetailsSaveFailed": "Could not save the session details.",
   "control.document": "Document",
   "control.documentReady": "A PDF or image is attached to this session.",
   "control.documentMissing": "No file attached yet. Add a PDF or image to begin.",
