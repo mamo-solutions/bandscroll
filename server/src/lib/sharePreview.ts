@@ -15,6 +15,7 @@ const HERO_Y = 56;
 const HERO_WIDTH = 640;
 const HERO_HEIGHT = 518;
 const HERO_PLACEHOLDER_TEXT = "Preview unavailable";
+const SHARE_PREVIEW_TEMPLATE_VERSION = "v2";
 
 type PreviewImage = Awaited<ReturnType<typeof loadImage>>;
 
@@ -241,13 +242,22 @@ function drawPreviewFrame(
 
   ctx.fillStyle = "#241714";
   ctx.font = "700 52px sans-serif";
-  drawWrappedText(ctx, session.title || "Untitled session", panelX + 30, panelY + 162, 338, 60, 4);
+  const titleLines = drawWrappedText(
+    ctx,
+    session.title || "Untitled session",
+    panelX + 30,
+    panelY + 162,
+    338,
+    60,
+    4
+  );
 
   const description = session.description?.trim() ?? "";
   if (description) {
     ctx.fillStyle = "#6f625c";
     ctx.font = "400 24px sans-serif";
-    drawWrappedText(ctx, description, panelX + 30, panelY + 372, 330, 34, 3);
+    const descriptionY = panelY + 162 + titleLines * 60 + 16;
+    drawWrappedText(ctx, description, panelX + 30, descriptionY, 330, 34, 3);
   }
 
   ctx.fillStyle = "#b95c40";
@@ -267,9 +277,22 @@ function drawWrappedText(
   maxWidth: number,
   lineHeight: number,
   maxLines: number
-): void {
+): number {
+  const lines = wrapText(ctx, text, maxWidth, maxLines);
+  lines.forEach((line, index) => {
+    ctx.fillText(line, x, y + index * lineHeight);
+  });
+  return lines.length;
+}
+
+function wrapText(
+  ctx: SKRSContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return;
+  if (words.length === 0) return [];
 
   const lines: string[] = [];
   let current = words[0];
@@ -293,9 +316,7 @@ function drawWrappedText(
     lines[lines.length - 1] = ellipsizeText(ctx, lastLine, maxWidth);
   }
 
-  lines.slice(0, maxLines).forEach((line, index) => {
-    ctx.fillText(line, x, y + index * lineHeight);
-  });
+  return lines.slice(0, maxLines);
 }
 
 function ellipsizeText(ctx: SKRSContext2D, text: string, maxWidth: number): string {
@@ -309,7 +330,8 @@ function ellipsizeText(ctx: SKRSContext2D, text: string, maxWidth: number): stri
 
 function previewVersion(session: SessionState): string {
   const uploadFilename = extractUploadFilename(session.pdfUrl) ?? "none";
-  return hashString(`${uploadFilename}:${session.title}`);
+  const description = session.description?.trim() ?? "";
+  return hashString(`${SHARE_PREVIEW_TEMPLATE_VERSION}:${uploadFilename}:${session.title}:${description}`);
 }
 
 export function sessionSharePreviewUrl(
