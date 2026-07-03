@@ -6,6 +6,7 @@ import {
   Music,
   RefreshCw,
   Square,
+  StopCircle,
   SunMedium,
   Trash2,
 } from "lucide-react";
@@ -44,6 +45,7 @@ type Props = {
   onSeekToMarker: (marker: SongMarker) => void;
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
   onSetBackgroundMode: (backgroundMode: SessionBackgroundMode) => void;
+  onSetAutoStopAtSongEnd: (autoStopAtSongEnd: boolean) => void;
   onUpdateDocumentDescription: (documentDescription: string) => Promise<void>;
   onShortcutBindingChange: (slot: AdminShortcutSlot, code: string) => void;
   onShortcutPresetChange: (
@@ -64,6 +66,7 @@ export function AdminSessionSetupPanel({
   onSeekToMarker,
   onSetPlaybackMode,
   onSetBackgroundMode,
+  onSetAutoStopAtSongEnd,
   onUpdateDocumentDescription,
   onShortcutBindingChange,
   onShortcutPresetChange,
@@ -237,6 +240,51 @@ export function AdminSessionSetupPanel({
                 </button>
               ))}
             </div>
+
+            {session.playbackMode === "scroll" && (
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+                <div className="flex items-start gap-3">
+                  <span
+                    className={cn(
+                      "mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg border",
+                      session.autoStopAtSongEnd
+                        ? "border-primary/20 bg-primary/10 text-primary"
+                        : "border-border/70 bg-muted/70 text-muted-foreground",
+                    )}
+                  >
+                    <StopCircle className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {t("controls.autoStop")}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {t("control.autoStopHint")}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={session.autoStopAtSongEnd}
+                  aria-label={t("controls.autoStop")}
+                  onClick={() => onSetAutoStopAtSongEnd(!session.autoStopAtSongEnd)}
+                  className={cn(
+                    "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors",
+                    session.autoStopAtSongEnd
+                      ? "border-primary bg-primary/80"
+                      : "border-border/70 bg-muted",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block size-5 transform rounded-full bg-white shadow-sm transition-transform",
+                      session.autoStopAtSongEnd ? "translate-x-6" : "translate-x-1",
+                    )}
+                  />
+                </button>
+              </div>
+            )}
           </fieldset>
 
           <fieldset className="rounded-xl border border-border/70 bg-muted/35 p-4">

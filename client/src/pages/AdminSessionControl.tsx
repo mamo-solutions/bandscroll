@@ -92,6 +92,9 @@ export function AdminSessionControl() {
   const reportedNumPagesRef = useRef<number | null>(null);
   const normalizedTempoKeyRef = useRef<string | null>(null);
   const lastWallRef = useRef<number>(Date.now());
+  // Set true when scroll-mode auto-stop has fired; suppresses further advance
+  // until the authoritative paused state arrives back via session-state.
+  const autoStopEngagedRef = useRef(false);
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SCREENS_STEP = 0.5;
@@ -184,7 +187,12 @@ export function AdminSessionControl() {
       stateRef.current = nextSession;
       setSession(nextSession);
       if (nextSession.playbackMode === "scroll") {
-        liveProgressRef.current = nextSession.progress;
+        // While auto-stop is engaged but the authoritative pause hasn't landed
+        // yet, keep progress pinned at the stop point instead of chasing a late
+        // still-playing tick past the boundary.
+        if (!(autoStopEngagedRef.current && nextSession.playing)) {
+          liveProgressRef.current = nextSession.progress;
+        }
         syncUiProgress(nextSession);
       } else {
         setUiProgress(
@@ -280,9 +288,14 @@ export function AdminSessionControl() {
       const viewer = viewerRef.current;
       if (currentSession && viewer && currentSession.playbackMode === "scroll") {
         if (currentSession.playing) {
-          advance();
+          if (!autoStopEngagedRef.current) {
+            const prevProgress = liveProgressRef.current;
+            advance();
+            maybeAutoStopAtSongEnd(prevProgress);
+          }
           viewer.scrollToProgress(liveProgressRef.current);
         } else {
+          autoStopEngagedRef.current = false;
           liveProgressRef.current = viewer.getCurrentProgress();
           lastWallRef.current = Date.now();
         }
@@ -428,6 +441,9 @@ export function AdminSessionControl() {
   function play() {
     const currentSession = stateRef.current;
     if (!currentSession) return;
+
+    // Resuming re-arms auto-stop; the boundary just left is now behind us.
+    autoStopEngagedRef.current = false;
 
     if (currentSession.playbackMode === "scroll") {
       socket.emit("admin-seek", { sessionId: id, progress: liveProgressRef.current });
@@ -578,6 +594,42 @@ export function AdminSessionControl() {
     if (!currentSession || currentSession.backgroundMode === backgroundMode) return;
     patchSession({ backgroundMode });
     socket.emit("admin-set-background-mode", { sessionId: id, backgroundMode });
+  }
+
+  function setAutoStopAtSongEnd(autoStopAtSongEnd: boolean) {
+    const currentSession = stateRef.current;
+    if (!currentSession || currentSession.autoStopAtSongEnd === autoStopAtSongEnd) return;
+    patchSession({ autoStopAtSongEnd });
+    socket.emit("admin-set-auto-stop-at-song-end", { sessionId: id, autoStopAtSongEnd });
+  }
+
+  /** Scroll-mode auto-stop: halt playback the moment this frame's advance
+   *  crosses a song boundary (a marker page's scroll position), via the normal
+   *  authoritative pause. Detection is a crossing test against the previous
+   *  frame's progress — NOT `getCurrentPage()`, whose nearest-page rounding
+   *  flips a boundary early and would skip it. A manual seek moves progress
+   *  outside this loop, so it never spans a boundary here and can't false-fire.
+   *  Page mode is handled server-side in nextPlaybackPatch. */
+  function maybeAutoStopAtSongEnd(prevProgress: number) {
+    const currentSession = stateRef.current;
+    if (!currentSession?.autoStopAtSongEnd || !currentSession.playing) return;
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    const newProgress = liveProgressRef.current;
+    if (newProgress <= prevProgress) return;
+    const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
+    for (const marker of markers) {
+      const stopProgress =
+        viewer.getProgressForPage(marker.page) ??
+        clamp01((marker.page - 1) / Math.max(numPagesRef.current, 1));
+      if (stopProgress <= 0) continue; // a song at the document start is never a stop
+      if (prevProgress < stopProgress && stopProgress <= newProgress) {
+        liveProgressRef.current = stopProgress;
+        autoStopEngagedRef.current = true;
+        pause();
+        return;
+      }
+    }
   }
 
   function setMarkers(markers: SongMarker[]) {
@@ -991,6 +1043,7 @@ export function AdminSessionControl() {
               onSeekToMarker={seekToMarker}
               onSetPlaybackMode={setPlaybackMode}
               onSetBackgroundMode={setBackgroundMode}
+              onSetAutoStopAtSongEnd={setAutoStopAtSongEnd}
               onUpdateDocumentDescription={updateDocumentDescription}
               onShortcutBindingChange={handleShortcutBindingChange}
               onShortcutPresetChange={handleShortcutPresetChange}

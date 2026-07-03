@@ -40,6 +40,7 @@ export class FileSessionStore implements SessionStoreAdapter {
         session.locked ??= false;
         session.playbackMode ??= "scroll";
         session.backgroundMode ??= "light";
+        session.autoStopAtSongEnd ??= false;
         session.currentPage ??= 1;
         session.numPages ??= 0;
         session.stateVersion ??= 0;

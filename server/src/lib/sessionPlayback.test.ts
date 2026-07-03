@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionState } from "../types.js";
-import { nextPlaybackPatch } from "./sessionPlayback.js";
+import { nextPlaybackPatch, nextSongStartPage } from "./sessionPlayback.js";
 
 function makeSession(overrides: Partial<SessionState> = {}): SessionState {
   return {
@@ -19,6 +19,7 @@ function makeSession(overrides: Partial<SessionState> = {}): SessionState {
     locked: false,
     playbackMode: "scroll",
     backgroundMode: "light",
+    autoStopAtSongEnd: false,
     currentPage: 1,
     numPages: 4,
     stateVersion: 0,
@@ -91,5 +92,64 @@ describe("nextPlaybackPatch", () => {
       currentPage: 4,
       playing: false,
     });
+  });
+
+  it("auto-stops page mode on the next song's first page when enabled", () => {
+    const patch = nextPlaybackPatch(
+      makeSession({
+        playbackMode: "page",
+        autoStopAtSongEnd: true,
+        markers: [{ id: "m", title: "Song 2", page: 3 }],
+        progress: 0.48,
+        currentPage: 2,
+        speed: 0.001,
+        numPages: 4,
+      }),
+      20_000
+    );
+    expect(patch).toEqual({
+      progress: 0.5, // pageStartProgress(3, 4)
+      currentPage: 3,
+      playing: false,
+    });
+  });
+
+  it("does not auto-stop page mode when the flag is off", () => {
+    const patch = nextPlaybackPatch(
+      makeSession({
+        playbackMode: "page",
+        autoStopAtSongEnd: false,
+        markers: [{ id: "m", title: "Song 2", page: 3 }],
+        progress: 0.48,
+        currentPage: 2,
+        speed: 0.001,
+        numPages: 4,
+      }),
+      20_000
+    );
+    expect(patch).toEqual({
+      progress: 0.5,
+      currentPage: 3,
+      playing: true,
+    });
+  });
+});
+
+describe("nextSongStartPage", () => {
+  const markers = [
+    { id: "a", title: "One", page: 1 },
+    { id: "b", title: "Two", page: 3 },
+    { id: "c", title: "Three", page: 6 },
+  ];
+
+  it("returns the lowest marker page strictly after the current page", () => {
+    expect(nextSongStartPage(markers, 1)).toBe(3);
+    expect(nextSongStartPage(markers, 2)).toBe(3);
+    expect(nextSongStartPage(markers, 3)).toBe(6);
+  });
+
+  it("returns null when no song starts after the current page", () => {
+    expect(nextSongStartPage(markers, 6)).toBeNull();
+    expect(nextSongStartPage([], 1)).toBeNull();
   });
 });

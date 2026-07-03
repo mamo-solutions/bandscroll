@@ -336,7 +336,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const updateRange = useCallback(() => {
     if (singlePageMode) {
       const index = Math.max(0, clampedVisiblePage - 1);
-      setRange({ start: index, end: index });
+      setRange((current) =>
+        current.start === index && current.end === index ? current : { start: index, end: index }
+      );
       return;
     }
     const el = scrollRef.current;

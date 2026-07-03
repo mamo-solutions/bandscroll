@@ -22,6 +22,7 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
     locked: false,
     playbackMode: "scroll",
     backgroundMode: "light",
+    autoStopAtSongEnd: false,
     currentPage: 1,
     numPages: 4,
     stateVersion: 1,

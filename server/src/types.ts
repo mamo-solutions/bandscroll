@@ -27,6 +27,7 @@ export type SessionState = {
   locked: boolean;
   playbackMode: PlaybackMode;
   backgroundMode: SessionBackgroundMode;
+  autoStopAtSongEnd: boolean;
   currentPage: number;
   numPages: number;
   stateVersion: number;

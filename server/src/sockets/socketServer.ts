@@ -272,6 +272,20 @@ export function initSocketServer(
     );
 
     socket.on(
+      "admin-set-auto-stop-at-song-end",
+      (payload: { sessionId: string; autoStopAtSongEnd: boolean }) => {
+        if (!guardAdmin("admin-set-auto-stop-at-song-end")) return;
+        const autoStopAtSongEnd = Boolean(payload?.autoStopAtSongEnd);
+        adminUpdate(String(payload?.sessionId), { autoStopAtSongEnd });
+        log.info("admin set-auto-stop-at-song-end", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          autoStopAtSongEnd,
+        });
+      }
+    );
+
+    socket.on(
       "admin-set-page",
       (payload: { sessionId: string; page: number }) => {
         if (!guardAdmin("admin-set-page")) return;

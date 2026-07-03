@@ -191,6 +191,7 @@ describe("REST API", () => {
     expect(body.status).toBe("draft");
     expect(body.playbackMode).toBe("scroll");
     expect(body.backgroundMode).toBe("light");
+    expect(body.autoStopAtSongEnd).toBe(false);
     expect(body.currentPage).toBe(1);
     expect(body.numPages).toBe(0);
     expect(body.documentDescription).toBeUndefined();
@@ -491,6 +492,57 @@ describe("Socket.IO sync", () => {
 
     viewer.close();
     admin.close();
+  });
+
+  it("broadcasts auto-stop-at-song-end changes to viewers", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Auto stop");
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+
+    const admin = await connect({ Cookie: cookie });
+    admin.emit("admin-join-session", body.id);
+    await sleep(150);
+    admin.emit("admin-set-auto-stop-at-song-end", {
+      sessionId: body.id,
+      autoStopAtSongEnd: true,
+    });
+
+    const updated = await waitForState(viewer, (s) => s.autoStopAtSongEnd === true);
+    expect(updated.autoStopAtSongEnd).toBe(true);
+
+    viewer.close();
+    admin.close();
+  });
+
+  it("rejects auto-stop-at-song-end from an unauthenticated socket", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Guard auto stop");
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+    let lastAutoStop = false;
+    viewer.on(
+      "session-state",
+      (s: { autoStopAtSongEnd: boolean }) => (lastAutoStop = s.autoStopAtSongEnd)
+    );
+
+    const anon = await connect(); // no cookie -> not admin
+    const errP = once(anon, "admin-error");
+    anon.emit("admin-set-auto-stop-at-song-end", {
+      sessionId: body.id,
+      autoStopAtSongEnd: true,
+    });
+
+    await expect(errP).resolves.toBeTruthy();
+    await sleep(300);
+    expect(lastAutoStop).toBe(false);
+
+    viewer.close();
+    anon.close();
   });
 
   it("notifies connected clients when a new session is created", async () => {

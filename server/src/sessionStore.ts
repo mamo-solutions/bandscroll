@@ -56,6 +56,7 @@ export function createSession(input: CreateSessionInput): SessionState {
     locked: false,
     playbackMode: "scroll",
     backgroundMode: "light",
+    autoStopAtSongEnd: false,
     currentPage: 1,
     numPages: 0,
     stateVersion: 0,
@@ -102,6 +103,7 @@ export type SessionPatch = Partial<
     | "locked"
     | "playbackMode"
     | "backgroundMode"
+    | "autoStopAtSongEnd"
     | "currentPage"
     | "numPages"
   >

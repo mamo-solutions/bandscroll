@@ -125,6 +125,7 @@ export const de = {
   "controls.sessionBackground": "Session-Hintergrund",
   "controls.backgroundLight": "Hell",
   "controls.backgroundBlack": "Schwarz",
+  "controls.autoStop": "Automatisch am Songende stoppen",
   "controls.currentPage": "Aktuelle Seite",
   "controls.previousPage": "Vorherige",
   "controls.nextPage": "Nächste",
@@ -207,6 +208,8 @@ export const de = {
   "control.switchModeHint": "Wähle kontinuierliches Scrollen oder klare Seitenwechsel.",
   "control.backgroundHint":
     "Lege fest, ob die Partitur in der Session auf hellem oder schwarzem Hintergrund angezeigt wird.",
+  "control.autoStopHint":
+    "Pausiert die Wiedergabe automatisch am Ende jedes Songs (anhand deiner Marker), damit du jeden Song bewusst startest.",
   "control.markerHint": "Lege Songs als Marker an, damit du während der Session schneller springen kannst.",
   "control.liveDockTitle": "Live-Steuerung",
   "control.liveDockDesc": "Transport und Tempo bleiben direkt an der Partitur.",
@@ -348,6 +351,7 @@ export const en: Record<TKey, string> = {
   "controls.sessionBackground": "Session background",
   "controls.backgroundLight": "Light",
   "controls.backgroundBlack": "Black",
+  "controls.autoStop": "Auto-stop at song end",
   "controls.currentPage": "Current page",
   "controls.previousPage": "Previous",
   "controls.nextPage": "Next",
@@ -430,6 +434,8 @@ export const en: Record<TKey, string> = {
   "control.switchModeHint": "Choose continuous scroll or clear page-by-page cues.",
   "control.backgroundHint":
     "Choose whether the score is shown on a light or black background during the session.",
+  "control.autoStopHint":
+    "Automatically pause playback at the end of each song (using your markers) so you start every song deliberately.",
   "control.markerHint": "Create song markers so you can jump faster during the session.",
   "control.liveDockTitle": "Live control",
   "control.liveDockDesc": "Transport and tempo stay close to the score.",

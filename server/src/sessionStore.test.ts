@@ -68,6 +68,7 @@ describe("createSession", () => {
     expect(s.updatedAt).toBe(s.createdAt);
     expect(s.playbackMode).toBe("scroll");
     expect(s.backgroundMode).toBe("light");
+    expect(s.autoStopAtSongEnd).toBe(false);
     expect(s.currentPage).toBe(1);
     expect(s.numPages).toBe(0);
     expect(s.stateVersion).toBe(0);
