@@ -243,17 +243,12 @@ function drawPreviewFrame(
   ctx.font = "700 52px sans-serif";
   drawWrappedText(ctx, session.title || "Untitled session", panelX + 30, panelY + 162, 338, 60, 4);
 
-  ctx.fillStyle = "#6f625c";
-  ctx.font = "400 24px sans-serif";
-  drawWrappedText(
-    ctx,
-    "Live synchronized score following for rehearsals, concerts, and setlists.",
-    panelX + 30,
-    panelY + 366,
-    330,
-    34,
-    3
-  );
+  const description = session.description?.trim() ?? "";
+  if (description) {
+    ctx.fillStyle = "#6f625c";
+    ctx.font = "400 24px sans-serif";
+    drawWrappedText(ctx, description, panelX + 30, panelY + 372, 330, 34, 3);
+  }
 
   ctx.fillStyle = "#b95c40";
   roundedRect(ctx, panelX + 30, panelY + 410, 186, 58, 18);
@@ -262,10 +257,6 @@ function drawPreviewFrame(
   ctx.fillStyle = "#fffaf5";
   ctx.font = "700 24px sans-serif";
   ctx.fillText("Open Session", panelX + 54, panelY + 447);
-
-  ctx.fillStyle = "rgba(36, 23, 20, 0.55)";
-  ctx.font = "500 18px sans-serif";
-  ctx.fillText("play-a-sync", panelX + 30, panelY + 520);
 }
 
 function drawWrappedText(
