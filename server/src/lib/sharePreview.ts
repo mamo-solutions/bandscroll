@@ -242,13 +242,15 @@ function drawPreviewFrame(
 
   ctx.fillStyle = "#241714";
   ctx.font = "700 52px sans-serif";
+  const titleY = panelY + 162;
+  const titleLineHeight = 60;
   const titleLines = drawWrappedText(
     ctx,
     session.title || "Untitled session",
     panelX + 30,
-    panelY + 162,
+    titleY,
     338,
-    60,
+    titleLineHeight,
     4
   );
 
@@ -256,7 +258,7 @@ function drawPreviewFrame(
   if (description) {
     ctx.fillStyle = "#6f625c";
     ctx.font = "400 24px sans-serif";
-    const descriptionY = panelY + 162 + titleLines * 60 + 16;
+    const descriptionY = titleY + (titleLines - 1) * titleLineHeight + 42;
     drawWrappedText(ctx, description, panelX + 30, descriptionY, 330, 34, 3);
   }
 
