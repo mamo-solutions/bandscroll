@@ -3,7 +3,7 @@ import type { Server as HttpServer } from "node:http";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import { createCanvas } from "canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import { io, type Socket } from "socket.io-client";
 import { createAppServer } from "./app.js";
 import { resetLoginRateLimitState } from "./security/loginRateLimit.js";

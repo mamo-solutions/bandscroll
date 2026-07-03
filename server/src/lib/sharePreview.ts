@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createCanvas, loadImage, type CanvasRenderingContext2D } from "canvas";
+import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { env } from "../env.js";
 import { logger } from "./logger.js";
@@ -84,7 +84,7 @@ function containRect(
 }
 
 function roundedRect(
-  ctx: CanvasRenderingContext2D,
+  ctx: SKRSContext2D,
   x: number,
   y: number,
   width: number,
@@ -143,7 +143,7 @@ async function renderSourceImage(session: SessionState, uploadPath: string) {
 }
 
 function drawPreviewFrame(
-  ctx: CanvasRenderingContext2D,
+  ctx: SKRSContext2D,
   session: SessionState,
   image: Awaited<ReturnType<typeof loadImage>>
 ): void {
@@ -229,7 +229,7 @@ function drawPreviewFrame(
 }
 
 function drawWrappedText(
-  ctx: CanvasRenderingContext2D,
+  ctx: SKRSContext2D,
   text: string,
   x: number,
   y: number,
@@ -267,7 +267,7 @@ function drawWrappedText(
   });
 }
 
-function ellipsizeText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+function ellipsizeText(ctx: SKRSContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let trimmed = text;
   while (trimmed.length > 1 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
