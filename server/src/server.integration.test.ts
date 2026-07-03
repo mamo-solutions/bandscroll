@@ -462,6 +462,20 @@ describe("REST API", () => {
     expect(previewRes.headers.get("content-type")).toContain("image/png");
   });
 
+  it("serves session-specific share metadata even with a trailing slash", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Trailing slash session", {
+      description: "Trailing slash description",
+    });
+
+    const res = await fetch(`${base}/session/${body.code}/`);
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html).toContain("Trailing slash session · BandScroll");
+    expect(html).toContain("Trailing slash description");
+  });
+
   it("updates the preview cache-buster when the uploaded document changes", async () => {
     const cookie = await login();
     const { body } = await createSession(cookie, "Swap preview", {

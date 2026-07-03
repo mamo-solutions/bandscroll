@@ -111,6 +111,40 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
   // Serve the built React app in production (client dist copied into the image).
   const clientDist = resolve(process.cwd(), "../client/dist");
   if (existsSync(clientDist)) {
+    const indexHtmlPath = resolve(clientDist, "index.html");
+
+    const serveSessionShareCard = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const code = String(req.params.code ?? "").replace(/\/$/, "");
+      const session = getSessionByCode(code);
+      if (!session) {
+        logger.info("share-card: session not found", { code, path: req.path });
+        return next();
+      }
+      let html: string;
+      try {
+        html = readFileSync(indexHtmlPath, "utf8");
+      } catch (err) {
+        logger.warn("share-card: failed to read index.html", { err });
+        return next();
+      }
+      const canonicalUrl = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/session/${session.code}`;
+      const imageUrl = hasSharePreview(session)
+        ? sessionSharePreviewUrl(session, env.PUBLIC_BASE_URL)
+        : `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/favicon.svg`;
+      logger.info("share-card: serving session metadata", {
+        code: session.code,
+        path: req.path,
+        hasSharePreview: hasSharePreview(session),
+        canonicalUrl,
+        imageUrl,
+      });
+      res.setHeader("Cache-Control", "no-cache");
+      res.type("html").send(injectShareCard(html, session, { canonicalUrl, imageUrl }));
+    };
+
+    app.get("/session/:code", serveSessionShareCard);
+    app.get("/session/:code/", serveSessionShareCard);
+
     app.use(
       express.static(clientDist, {
         setHeaders: (res, filePath) => {
@@ -126,29 +160,6 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
         },
       })
     );
-    const indexHtmlPath = resolve(clientDist, "index.html");
-
-    // Public session deep-links: serve the SPA shell but rewrite the share-card
-    // meta tags with the session name/description so link unfurlers (which don't
-    // run our JS) show meaningful previews. Falls back to the default shell when
-    // the code is unknown or the file can't be read.
-    app.get("/session/:code", (req, res, next) => {
-      const session = getSessionByCode(String(req.params.code));
-      if (!session) return next();
-      let html: string;
-      try {
-        html = readFileSync(indexHtmlPath, "utf8");
-      } catch (err) {
-        logger.warn("share-card: failed to read index.html", { err });
-        return next();
-      }
-      const canonicalUrl = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/session/${session.code}`;
-      const imageUrl = hasSharePreview(session)
-        ? sessionSharePreviewUrl(session, env.PUBLIC_BASE_URL)
-        : `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/favicon.svg`;
-      res.setHeader("Cache-Control", "no-cache");
-      res.type("html").send(injectShareCard(html, session, { canonicalUrl, imageUrl }));
-    });
 
     // SPA fallback for client-side routing (anything not /api or /uploads).
     app.get(/^\/(?!api|uploads|share-previews).*/, (_req, res) => {
