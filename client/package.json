@@ -20,6 +20,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/poppins": "^5.2.7",
     "@radix-ui/react-label": "^2.1.9",
     "@radix-ui/react-slider": "^1.4.0",
     "@radix-ui/react-slot": "^1.2.5",
