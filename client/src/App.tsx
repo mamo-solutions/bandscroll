@@ -6,6 +6,7 @@ import { PublicHome } from "./pages/PublicHome";
 import { SessionViewer } from "./pages/SessionViewer";
 import { AdminLogin } from "./pages/AdminLogin";
 import { AdminDashboard } from "./pages/AdminDashboard";
+import { AdminAiSettings } from "./pages/AdminAiSettings";
 import { AdminSessionControl } from "./pages/AdminSessionControl";
 
 export default function App() {
@@ -23,6 +24,14 @@ export default function App() {
           element={
             <RequireAdminAuth>
               <AdminDashboard />
+            </RequireAdminAuth>
+          }
+        />
+        <Route
+          path="/admin/ai"
+          element={
+            <RequireAdminAuth>
+              <AdminAiSettings />
             </RequireAdminAuth>
           }
         />

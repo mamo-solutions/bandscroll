@@ -13,6 +13,7 @@ import {
   requireLoginAttemptAllowed,
 } from "../security/loginRateLimit.js";
 import { requireTrustedAdminOrigin } from "../security/origin.js";
+import { requireAiTestAttemptAllowed } from "../security/aiConfigRateLimit.js";
 import { validateUploadFile } from "../uploads/validate.js";
 import {
   createSession,
@@ -34,6 +35,14 @@ import {
   refreshSessionSharePreview,
   removeSessionSharePreview,
 } from "../lib/sharePreview.js";
+import {
+  AiConfigError,
+  deleteAiProviderConfig,
+  getAiConfigSummary,
+  listAiProviders,
+  saveAiProviderConfig,
+  testAiProviderConfig,
+} from "../ai/service.js";
 
 export const adminRouter = Router();
 
@@ -143,6 +152,61 @@ adminRouter.get("/metrics", (_req, res) => {
   res.json(metrics.snapshot());
 });
 
+adminRouter.get("/ai/providers", (_req, res) => {
+  res.json(listAiProviders());
+});
+
+adminRouter.get("/ai/config", (_req, res) => {
+  try {
+    res.json(getAiConfigSummary());
+  } catch (err) {
+    handleAiConfigError(err, res);
+  }
+});
+
+adminRouter.put("/ai/config/:provider", (req, res) => {
+  try {
+    const summary = saveAiProviderConfig(req.params.provider, req.body ?? {});
+    logger.info("ai config saved", {
+      provider: summary.provider,
+      isDefault: summary.isDefault,
+      capabilities: summary.capabilities,
+    });
+    res.json(summary);
+  } catch (err) {
+    handleAiConfigError(err, res);
+  }
+});
+
+adminRouter.post("/ai/config/:provider/test", requireAiTestAttemptAllowed, async (req, res) => {
+  try {
+    const result = await testAiProviderConfig(req.params.provider);
+    logger.info("ai config tested", {
+      provider: result.provider,
+      ok: result.ok,
+      latencyMs: result.latencyMs,
+      error: result.error,
+    });
+    res.json(result);
+  } catch (err) {
+    handleAiConfigError(err, res);
+  }
+});
+
+adminRouter.delete("/ai/config/:provider", (req, res) => {
+  try {
+    const deleted = deleteAiProviderConfig(req.params.provider);
+    if (!deleted) {
+      res.status(404).json({ error: "ai-config-not-found" });
+      return;
+    }
+    logger.info("ai config deleted", { provider: req.params.provider });
+    res.json({ ok: true });
+  } catch (err) {
+    handleAiConfigError(err, res);
+  }
+});
+
 adminRouter.post("/sessions", (req, res) => {
   const title = String(req.body?.title ?? "").trim();
   if (!title) {
@@ -157,6 +221,25 @@ adminRouter.post("/sessions", (req, res) => {
   broadcastSessionListUpdated();
   res.status(201).json(session);
 });
+
+function handleAiConfigError(err: unknown, res: Response): void {
+  if (!(err instanceof AiConfigError)) {
+    throw err;
+  }
+
+  const statusByCode: Record<AiConfigError["code"], number> = {
+    "invalid-provider": 404,
+    "encryption-unavailable": 503,
+    "api-key-required": 400,
+    "base-url-required": 400,
+    "base-url-unsupported": 400,
+    "invalid-base-url": 400,
+    "invalid-capabilities": 400,
+    "config-not-found": 404,
+  };
+
+  res.status(statusByCode[err.code]).json({ error: err.code, message: err.message });
+}
 
 adminRouter.patch("/sessions/:id", async (req, res) => {
   const session = getSessionById(req.params.id);

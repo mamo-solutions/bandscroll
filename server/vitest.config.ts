@@ -13,6 +13,7 @@ export default defineConfig({
       LOG_LEVEL: "error",
       ADMIN_PASSWORD: "test-password-123",
       ADMIN_SESSION_SECRET: "test-session-secret-which-is-long-enough",
+      AI_CONFIG_ENCRYPTION_KEY: "test-ai-config-encryption-key",
       UPLOAD_DIR: join(tmpdir(), "bandscroll-test-uploads"),
       SHARE_PREVIEW_DIR: join(tmpdir(), "bandscroll-test-share-previews"),
       PUBLIC_BASE_URL: "http://localhost:3000",

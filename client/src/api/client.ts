@@ -1,4 +1,11 @@
 import type { SessionState } from "../types/session";
+import type {
+  AiConfigResponse,
+  AiConnectionTestResult,
+  AiProvider,
+  AiProviderDefinition,
+  AiProviderConfigSummary,
+} from "../types/ai";
 
 // Same-origin requests; credentials:include carries the admin session cookie.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -12,19 +19,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let detail = "";
+    let message = "";
     try {
-      detail = (await res.json())?.error ?? "";
+      const body = (await res.json()) as { error?: string; message?: string };
+      detail = body.error ?? "";
+      message = body.message ?? "";
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, detail || res.statusText);
+    throw new ApiError(res.status, detail || res.statusText, message);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public detailMessage?: string
+  ) {
     super(message);
     this.name = "ApiError";
   }
@@ -90,5 +104,29 @@ export const api = {
   toggleSessionLock: (id: string) =>
     request<SessionState>(`/api/admin/sessions/${id}/toggle-lock`, {
       method: "POST",
+    }),
+  aiProviders: () => request<AiProviderDefinition[]>("/api/admin/ai/providers"),
+  aiConfig: () => request<AiConfigResponse>("/api/admin/ai/config"),
+  saveAiConfig: (
+    provider: AiProvider,
+    data: {
+      apiKey?: string;
+      baseUrl?: string;
+      defaultModel?: string;
+      capabilities?: string[];
+      isDefault?: boolean;
+    }
+  ) =>
+    request<AiProviderConfigSummary>(`/api/admin/ai/config/${provider}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  testAiConfig: (provider: AiProvider) =>
+    request<AiConnectionTestResult>(`/api/admin/ai/config/${provider}/test`, {
+      method: "POST",
+    }),
+  deleteAiConfig: (provider: AiProvider) =>
+    request<{ ok: boolean }>(`/api/admin/ai/config/${provider}`, {
+      method: "DELETE",
     }),
 };

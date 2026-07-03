@@ -1,12 +1,14 @@
 import type { AddressInfo } from "node:net";
-import type { Server as HttpServer } from "node:http";
+import { createServer, type Server as HttpServer } from "node:http";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import { io, type Socket } from "socket.io-client";
 import { createAppServer } from "./app.js";
+import { getAiConfigStore, resetAiConfigStoreForTests } from "./ai/aiConfigStore.js";
 import { resetLoginRateLimitState } from "./security/loginRateLimit.js";
+import { resetAiConfigRateLimitState } from "./security/aiConfigRateLimit.js";
 import { getIo } from "./sockets/socketServer.js";
 
 let httpServer: HttpServer;
@@ -95,10 +97,14 @@ afterAll(async () => {
   // Closing the Socket.IO server force-disconnects clients and closes the
   // underlying HTTP server (httpServer.close() alone would hang on open sockets).
   await new Promise<void>((resolve) => getIo().close(() => resolve()));
+  resetAiConfigStoreForTests();
 });
 
 beforeEach(() => {
   resetLoginRateLimitState();
+  resetAiConfigRateLimitState();
+  getAiConfigStore().clear();
+  process.env.AI_CONFIG_ENCRYPTION_KEY = "test-ai-config-encryption-key";
 });
 
 // ---- helpers ----
@@ -282,6 +288,116 @@ describe("REST API", () => {
     );
     expect(started.status).toBe("live");
     expect(started.playing).toBe(true);
+  });
+
+  it("requires admin auth for ai config endpoints", async () => {
+    const res = await fetch(`${base}/api/admin/ai/config`);
+    expect(res.status).toBe(401);
+  });
+
+  it("saves masked AI config summaries and never returns the raw key", async () => {
+    const cookie = await login();
+    const save = await fetch(`${base}/api/admin/ai/config/openai-compatible`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "top-secret-demo-key",
+        baseUrl: "http://localhost:9999/v1",
+        defaultModel: "demo-model",
+        capabilities: ["marker-generation", "chord-analysis"],
+        isDefault: true,
+      }),
+    });
+    expect(save.status).toBe(200);
+    const summary = await json(save);
+    expect(summary.hasApiKey).toBe(true);
+    expect(summary.maskedApiKey).toContain("…");
+    expect(JSON.stringify(summary)).not.toContain("top-secret-demo-key");
+
+    const config = await fetch(`${base}/api/admin/ai/config`, {
+      headers: adminHeaders(cookie),
+    });
+    expect(config.status).toBe(200);
+    const body = await json(config);
+    expect(body.activeProvider).toBe("openai-compatible");
+    expect(JSON.stringify(body)).not.toContain("top-secret-demo-key");
+  });
+
+  it("rejects AI config writes when encryption is unavailable", async () => {
+    const cookie = await login();
+    process.env.AI_CONFIG_ENCRYPTION_KEY = "";
+
+    const res = await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ apiKey: "sk-test" }),
+    });
+
+    expect(res.status).toBe(503);
+    expect((await json(res)).error).toBe("encryption-unavailable");
+  });
+
+  it("tests an openai-compatible config against a live provider endpoint", async () => {
+    const providerServer = await new Promise<HttpServer>((resolve) => {
+      const server = createServer((req, res) => {
+        if (req.url === "/v1/models" && req.headers.authorization === "Bearer demo-key") {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ data: [{ id: "model-1" }, { id: "model-2" }] }));
+          return;
+        }
+        res.statusCode = 401;
+        res.end(JSON.stringify({ error: "unauthorized" }));
+      });
+      server.listen(0, () => resolve(server));
+    });
+    const providerPort = (providerServer.address() as AddressInfo).port;
+
+    try {
+      const cookie = await login();
+      const save = await fetch(`${base}/api/admin/ai/config/openai-compatible`, {
+        method: "PUT",
+        headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          apiKey: "demo-key",
+          baseUrl: `http://localhost:${providerPort}/v1`,
+          defaultModel: "model-1",
+          capabilities: ["marker-generation"],
+        }),
+      });
+      expect(save.status).toBe(200);
+
+      const testRes = await fetch(`${base}/api/admin/ai/config/openai-compatible/test`, {
+        method: "POST",
+        headers: adminHeaders(cookie),
+      });
+      expect(testRes.status).toBe(200);
+      expect(await json(testRes)).toMatchObject({
+        ok: true,
+        provider: "openai-compatible",
+        modelCount: 2,
+      });
+    } finally {
+      await new Promise<void>((resolve) => providerServer.close(() => resolve()));
+    }
+  });
+
+  it("deletes stored AI config", async () => {
+    const cookie = await login();
+    await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "sk-delete-me",
+        capabilities: ["marker-generation"],
+      }),
+    });
+
+    const res = await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "DELETE",
+      headers: adminHeaders(cookie),
+    });
+    expect(res.status).toBe(200);
+    expect((await json(res)).ok).toBe(true);
   });
 
   it("accepts a valid Referer when Origin is absent on an admin mutation", async () => {

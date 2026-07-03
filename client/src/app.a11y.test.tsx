@@ -9,9 +9,11 @@ import { Layout } from "@/components/Layout";
 import { PublicHome } from "@/pages/PublicHome";
 import { AdminLogin } from "@/pages/AdminLogin";
 import { AdminDashboard } from "@/pages/AdminDashboard";
+import { AdminAiSettings } from "@/pages/AdminAiSettings";
 import { AdminSessionControl } from "@/pages/AdminSessionControl";
 import { SessionViewer } from "@/pages/SessionViewer";
 import type { SessionState } from "@/types/session";
+import type { AiConfigResponse, AiProviderDefinition } from "@/types/ai";
 
 const sessionFixture: SessionState = {
   id: "session-1",
@@ -51,6 +53,11 @@ const apiMock = {
   adminSession: vi.fn<(id: string) => Promise<SessionState>>(),
   updateSessionDetails: vi.fn<(id: string, data: unknown) => Promise<SessionState>>(),
   uploadPdf: vi.fn<(id: string, file: File, documentDescription?: string) => Promise<SessionState>>(),
+  aiProviders: vi.fn<() => Promise<AiProviderDefinition[]>>(),
+  aiConfig: vi.fn<() => Promise<AiConfigResponse>>(),
+  saveAiConfig: vi.fn<(provider: string, data: unknown) => Promise<unknown>>(),
+  testAiConfig: vi.fn<(provider: string) => Promise<unknown>>(),
+  deleteAiConfig: vi.fn<(provider: string) => Promise<unknown>>(),
 };
 
 const authMock = {
@@ -76,6 +83,11 @@ vi.mock("@/api/client", () => ({
     adminSession: (...args: [string]) => apiMock.adminSession(...args),
     updateSessionDetails: (...args: [string, unknown]) => apiMock.updateSessionDetails(...args),
     uploadPdf: (...args: [string, File, string | undefined]) => apiMock.uploadPdf(...args),
+    aiProviders: (...args: []) => apiMock.aiProviders(...args),
+    aiConfig: (...args: []) => apiMock.aiConfig(...args),
+    saveAiConfig: (...args: [string, unknown]) => apiMock.saveAiConfig(...args),
+    testAiConfig: (...args: [string]) => apiMock.testAiConfig(...args),
+    deleteAiConfig: (...args: [string]) => apiMock.deleteAiConfig(...args),
     startSession: vi.fn(),
     pauseSession: vi.fn(),
     seekSession: vi.fn(),
@@ -166,6 +178,11 @@ beforeEach(() => {
   apiMock.adminSession.mockReset();
   apiMock.updateSessionDetails.mockReset();
   apiMock.uploadPdf.mockReset();
+  apiMock.aiProviders.mockReset();
+  apiMock.aiConfig.mockReset();
+  apiMock.saveAiConfig.mockReset();
+  apiMock.testAiConfig.mockReset();
+  apiMock.deleteAiConfig.mockReset();
   authMock.me.mockReset();
   authMock.logout.mockReset();
 
@@ -175,6 +192,36 @@ beforeEach(() => {
   apiMock.adminSession.mockResolvedValue(sessionFixture);
   apiMock.updateSessionDetails.mockResolvedValue(sessionFixture);
   apiMock.uploadPdf.mockResolvedValue(sessionFixture);
+  apiMock.aiProviders.mockResolvedValue([
+    {
+      id: "openai",
+      label: "OpenAI",
+      description: "OpenAI",
+      supportsCustomBaseUrl: false,
+      capabilities: ["marker-generation", "chord-analysis"],
+    },
+  ]);
+  apiMock.aiConfig.mockResolvedValue({
+    activeProvider: "openai",
+    configs: [
+      {
+        provider: "openai",
+        label: "OpenAI",
+        hasApiKey: true,
+        maskedApiKey: "sk…1234",
+        capabilities: ["marker-generation", "chord-analysis"],
+        isDefault: true,
+      },
+    ],
+  });
+  apiMock.saveAiConfig.mockResolvedValue({});
+  apiMock.testAiConfig.mockResolvedValue({
+    ok: true,
+    provider: "openai",
+    latencyMs: 10,
+    modelCount: 1,
+  });
+  apiMock.deleteAiConfig.mockResolvedValue({ ok: true });
   authMock.me.mockResolvedValue(false);
   authMock.logout.mockResolvedValue();
 });
@@ -258,6 +305,21 @@ describe("route accessibility", () => {
     );
 
     await screen.findByRole("main");
+    expect((await axe(view.container)).violations).toEqual([]);
+  });
+
+  it("has no obvious axe violations on /admin/ai", async () => {
+    const view = renderWithProviders(
+      <MemoryRouter initialEntries={["/admin/ai"]}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/admin/ai" element={<AdminAiSettings />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("heading", { name: "AI Settings" });
     expect((await axe(view.container)).violations).toEqual([]);
   });
 });

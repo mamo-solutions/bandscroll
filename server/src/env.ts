@@ -45,6 +45,15 @@ export const env = {
   // "sqlite" persists them to DATA_DIR/sessions.db (durable per-write).
   STORAGE: process.env.STORAGE ?? "memory",
   DATA_DIR: resolve(process.cwd(), process.env.DATA_DIR ?? "../data"),
+  AI_CONFIG_ENCRYPTION_KEY: process.env.AI_CONFIG_ENCRYPTION_KEY?.trim() || "",
 };
 
 export type Env = typeof env;
+
+export function getAiConfigEncryptionKey(): string | null {
+  const value =
+    "AI_CONFIG_ENCRYPTION_KEY" in process.env
+      ? process.env.AI_CONFIG_ENCRYPTION_KEY?.trim() || ""
+      : env.AI_CONFIG_ENCRYPTION_KEY;
+  return value || null;
+}

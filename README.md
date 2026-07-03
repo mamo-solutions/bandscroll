@@ -118,6 +118,7 @@ All configuration is via the root `.env` (see `.env.example`):
 | `PUBLIC_BASE_URL` | Public base URL, used for shareable links. |
 | `STORAGE` | `memory` (default), `file`, or `sqlite` for persisted sessions. |
 | `DATA_DIR` | Where `sessions.json` (`file`) or `sessions.db` (`sqlite`) is stored. |
+| `AI_CONFIG_ENCRYPTION_KEY` | Required to store app-wide AI provider keys encrypted at rest. |
 | `LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. |
 | `METRICS_INTERVAL_MS` | Performance-stats summary interval in ms (default `60000`, `0` disables). |
 

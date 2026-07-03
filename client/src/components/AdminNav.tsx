@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut } from "lucide-react";
+import { Bot, LayoutDashboard, LogOut } from "lucide-react";
 import { auth } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,10 +9,12 @@ export function AdminNav({
   title,
   subtitle,
   showDashboard = true,
+  showAiSettings = true,
 }: {
   title?: string;
   subtitle?: string;
   showDashboard?: boolean;
+  showAiSettings?: boolean;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -45,6 +47,18 @@ export function AdminNav({
           >
             <LayoutDashboard />
             <span className="hidden sm:inline">{t("nav.dashboard")}</span>
+          </Button>
+        )}
+        {showAiSettings && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/admin/ai")}
+            aria-label={t("nav.aiSettings")}
+            title={t("nav.aiSettings")}
+          >
+            <Bot />
+            <span className="hidden sm:inline">{t("nav.aiSettings")}</span>
           </Button>
         )}
         <Button

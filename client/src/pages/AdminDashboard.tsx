@@ -132,6 +132,7 @@ export function AdminDashboard() {
           { count: sessions.length }
         )}
         showDashboard={false}
+        showAiSettings
       />
 
       {/* Create */}
