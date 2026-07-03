@@ -30,6 +30,10 @@ import {
   broadcastSessionState,
 } from "../sockets/socketServer.js";
 import { removeObsoleteUpload } from "../uploads/cleanup.js";
+import {
+  refreshSessionSharePreview,
+  removeSessionSharePreview,
+} from "../lib/sharePreview.js";
 
 export const adminRouter = Router();
 
@@ -154,7 +158,7 @@ adminRouter.post("/sessions", (req, res) => {
   res.status(201).json(session);
 });
 
-adminRouter.patch("/sessions/:id", (req, res) => {
+adminRouter.patch("/sessions/:id", async (req, res) => {
   const session = getSessionById(req.params.id);
   if (!session) {
     res.status(404).json({ error: "session-not-found" });
@@ -183,6 +187,9 @@ adminRouter.patch("/sessions/:id", (req, res) => {
   }
   broadcastSessionState(updated);
   broadcastSessionListUpdated();
+  if (updated.pdfUrl && patch.title !== undefined) {
+    await refreshSessionSharePreview(updated);
+  }
   res.json(updated);
 });
 
@@ -199,7 +206,7 @@ adminRouter.post(
   "/sessions/:id/pdf",
   rateLimitUpload,
   upload.single("pdf"),
-  (req, res) => {
+  async (req, res) => {
     const session = getSessionById(req.params.id);
     if (!session) {
       res.status(404).json({ error: "session-not-found" });
@@ -246,6 +253,7 @@ adminRouter.post(
     }
     const updated = updateSessionState(session.id, patch);
     if (updated) {
+      await refreshSessionSharePreview(updated);
       broadcastSessionState(updated);
       broadcastSessionListUpdated();
       if (oldPdfUrl && oldPdfUrl !== pdfUrl) {
@@ -337,6 +345,7 @@ adminRouter.delete("/sessions/:id", (req, res) => {
   const ok = deleteSession(req.params.id);
   if (ok && session) {
     removeObsoleteUpload(session.pdfUrl);
+    removeSessionSharePreview(session.code);
   }
   broadcastSessionListUpdated();
   res.json({ ok });

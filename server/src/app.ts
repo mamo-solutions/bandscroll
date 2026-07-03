@@ -16,6 +16,7 @@ import { initSocketServer } from "./sockets/socketServer.js";
 import { logger } from "./lib/logger.js";
 import { getSessionByCode } from "./sessionStore.js";
 import { injectShareCard } from "./lib/shareCard.js";
+import { hasSharePreview, sessionSharePreviewUrl } from "./lib/sharePreview.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { allowedConnectSources } from "./security/origin.js";
@@ -97,6 +98,16 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
     express.static(env.UPLOAD_DIR)
   );
 
+  app.use(
+    "/share-previews",
+    (_req, res, next) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      next();
+    },
+    express.static(env.SHARE_PREVIEW_DIR)
+  );
+
   // Serve the built React app in production (client dist copied into the image).
   const clientDist = resolve(process.cwd(), "../client/dist");
   if (existsSync(clientDist)) {
@@ -132,12 +143,15 @@ export function createAppServer(): { app: express.Express; httpServer: HttpServe
         return next();
       }
       const canonicalUrl = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/session/${session.code}`;
+      const imageUrl = hasSharePreview(session)
+        ? sessionSharePreviewUrl(session, env.PUBLIC_BASE_URL)
+        : `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/favicon.svg`;
       res.setHeader("Cache-Control", "no-cache");
-      res.type("html").send(injectShareCard(html, session, canonicalUrl));
+      res.type("html").send(injectShareCard(html, session, { canonicalUrl, imageUrl }));
     });
 
     // SPA fallback for client-side routing (anything not /api or /uploads).
-    app.get(/^\/(?!api|uploads).*/, (_req, res) => {
+    app.get(/^\/(?!api|uploads|share-previews).*/, (_req, res) => {
       res.setHeader("Cache-Control", "no-cache");
       res.sendFile(indexHtmlPath);
     });

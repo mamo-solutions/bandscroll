@@ -10,8 +10,11 @@ const INDEX_HTML = `<!doctype html>
     <meta property="og:type" content="website" />
     <meta property="og:title" content="BandScroll — real-time synchronized PDF scrolling" />
     <meta property="og:description" content="Default og description." />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="BandScroll" />
     <meta name="twitter:description" content="Default twitter description." />
+    <meta name="twitter:image" content="/favicon.svg" />
   </head>
   <body><div id="root"></div></body>
 </html>`;
@@ -65,12 +68,22 @@ describe("shareCardMeta", () => {
 
 describe("injectShareCard", () => {
   it("injects session name/description into the shell", () => {
-    const out = injectShareCard(INDEX_HTML, makeSession(), "https://example.com/session/SESSION-1234");
+    const out = injectShareCard(INDEX_HTML, makeSession(), {
+      canonicalUrl: "https://example.com/session/SESSION-1234",
+      imageUrl: "https://example.com/share-previews/SESSION-1234.png?v=abc123",
+    });
     expect(out).toContain("<title>Summer Set · BandScroll</title>");
     expect(out).toContain('property="og:title" content="Summer Set · BandScroll"');
     expect(out).toContain('property="og:description" content="Our July rooftop gig setlist."');
+    expect(out).toContain(
+      'property="og:image" content="https://example.com/share-previews/SESSION-1234.png?v=abc123"'
+    );
     expect(out).toContain('name="twitter:title" content="Summer Set · BandScroll"');
     expect(out).toContain('name="twitter:description" content="Our July rooftop gig setlist."');
+    expect(out).toContain(
+      'name="twitter:image" content="https://example.com/share-previews/SESSION-1234.png?v=abc123"'
+    );
+    expect(out).toContain('name="twitter:card" content="summary_large_image"');
     expect(out).toContain('name="description" content="Our July rooftop gig setlist."');
     expect(out).toContain('property="og:url" content="https://example.com/session/SESSION-1234"');
     // Untouched tags stay put.
@@ -87,5 +100,12 @@ describe("injectShareCard", () => {
   it("does not add og:url when no canonical url is given", () => {
     const out = injectShareCard(INDEX_HTML, makeSession());
     expect(out).not.toContain("og:url");
+  });
+
+  it("keeps summary cards when no image url is given", () => {
+    const out = injectShareCard(INDEX_HTML, makeSession());
+    expect(out).toContain('name="twitter:card" content="summary"');
+    expect(out).toContain('property="og:image" content="/favicon.svg"');
+    expect(out).toContain('name="twitter:image" content="/favicon.svg"');
   });
 });

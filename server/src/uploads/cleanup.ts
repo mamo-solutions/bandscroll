@@ -3,10 +3,18 @@ import { resolve } from "node:path";
 import { env } from "../env.js";
 import { listAdminSessions } from "../sessionStore.js";
 
+/** Extract the filename from a public file URL under a fixed path prefix. */
+export function extractServedFilename(
+  publicUrl: string | undefined,
+  prefix: `/${string}/`
+): string | undefined {
+  if (!publicUrl || !publicUrl.startsWith(prefix)) return undefined;
+  return publicUrl.slice(prefix.length);
+}
+
 /** Extract the filename from an `/uploads/:file` URL, if present. */
 export function extractUploadFilename(pdfUrl: string | undefined): string | undefined {
-  if (!pdfUrl || !pdfUrl.startsWith("/uploads/")) return undefined;
-  return pdfUrl.slice("/uploads/".length);
+  return extractServedFilename(pdfUrl, "/uploads/");
 }
 
 /**

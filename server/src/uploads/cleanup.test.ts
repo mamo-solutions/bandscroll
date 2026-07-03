@@ -9,7 +9,11 @@ import {
   updateSessionState,
 } from "../sessionStore.js";
 import { MemorySessionStore } from "../store/memorySessionStore.js";
-import { extractUploadFilename, removeObsoleteUpload } from "./cleanup.js";
+import {
+  extractServedFilename,
+  extractUploadFilename,
+  removeObsoleteUpload,
+} from "./cleanup.js";
 
 // Each test gets a fresh in-memory store and temp upload dir.
 describe("upload cleanup", () => {
@@ -32,6 +36,9 @@ describe("upload cleanup", () => {
 
   it("extracts upload filenames", () => {
     expect(extractUploadFilename("/uploads/abc.pdf")).toBe("abc.pdf");
+    expect(extractServedFilename("/share-previews/SESSION-1234.png", "/share-previews/")).toBe(
+      "SESSION-1234.png"
+    );
     expect(extractUploadFilename(undefined)).toBeUndefined();
     expect(extractUploadFilename("https://example.com/file.pdf")).toBeUndefined();
     expect(extractUploadFilename("/other/abc.pdf")).toBeUndefined();

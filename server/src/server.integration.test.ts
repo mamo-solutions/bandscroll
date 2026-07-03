@@ -1,6 +1,9 @@
 import type { AddressInfo } from "node:net";
 import type { Server as HttpServer } from "node:http";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resolve } from "node:path";
+import { createCanvas } from "canvas";
 import { io, type Socket } from "socket.io-client";
 import { createAppServer } from "./app.js";
 import { resetLoginRateLimitState } from "./security/loginRateLimit.js";
@@ -11,7 +14,77 @@ let base: string;
 
 const PW = "test-password-123";
 
+function makePngBytes(): Uint8Array {
+  const canvas = createCanvas(48, 48);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffe1c4";
+  ctx.fillRect(0, 0, 48, 48);
+  ctx.fillStyle = "#b95c40";
+  ctx.beginPath();
+  ctx.arc(24, 24, 14, 0, Math.PI * 2);
+  ctx.fill();
+  return new Uint8Array(canvas.toBuffer("image/png"));
+}
+
+function makePdfBytes(): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 240] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    "<< /Length 43 >>\nstream\nBT /F1 24 Tf 48 120 Td (BandScroll) Tj ET\nendstream",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(pdf, "utf8"));
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+
+  const xrefOffset = Buffer.byteLength(pdf, "utf8");
+  pdf += `xref
+0 ${objects.length + 1}
+0000000000 65535 f 
+`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${offset.toString().padStart(10, "0")} 00000 n 
+`;
+  });
+  pdf += `trailer
+<< /Size ${objects.length + 1} /Root 1 0 R >>
+startxref
+${xrefOffset}
+%%EOF`;
+
+  return new Uint8Array(Buffer.from(pdf, "utf8"));
+}
+
 beforeAll(async () => {
+  const clientDist = resolve(process.cwd(), "../client/dist");
+  const indexHtmlPath = resolve(clientDist, "index.html");
+  if (!existsSync(indexHtmlPath)) {
+    mkdirSync(clientDist, { recursive: true });
+    writeFileSync(
+      indexHtmlPath,
+      `<!doctype html>
+<html lang="en">
+  <head>
+    <title>BandScroll</title>
+    <meta name="description" content="Default description." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="BandScroll" />
+    <meta property="og:description" content="Default og description." />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="BandScroll" />
+    <meta name="twitter:description" content="Default twitter description." />
+    <meta name="twitter:image" content="/favicon.svg" />
+  </head>
+  <body><div id="root"></div></body>
+</html>`
+    );
+  }
   ({ httpServer } = createAppServer());
   await new Promise<void>((resolve) => httpServer.listen(0, resolve));
   const { port } = httpServer.address() as AddressInfo;
@@ -294,7 +367,7 @@ describe("REST API", () => {
     const form = new FormData();
     form.append(
       "pdf",
-      new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])], { type: "image/png" }),
+      new Blob([makePngBytes()], { type: "image/png" }),
       "score.png"
     );
     form.append("documentDescription", "Lead sheet cover image");
@@ -307,6 +380,16 @@ describe("REST API", () => {
     );
     expect(updated.pdfUrl).toMatch(/^\/uploads\/.+\.png$/);
     expect(updated.documentDescription).toBe("Lead sheet cover image");
+    const sessionPage = await (await fetch(`${base}/session/${updated.code}`)).text();
+    expect(sessionPage).toContain(`/share-previews/${updated.code}.png?v=`);
+    expect(sessionPage).toContain('name="twitter:card" content="summary_large_image"');
+
+    const shareImageUrl = sessionPage.match(/https?:\/\/[^"]+\/share-previews\/[^"]+/)?.[0];
+    expect(shareImageUrl).toBeTruthy();
+    const previewUrl = new URL(shareImageUrl!);
+    const previewRes = await fetch(`${base}${previewUrl.pathname}${previewUrl.search}`);
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.headers.get("content-type")).toContain("image/png");
   });
 
   it("rejects an image upload without a document description", async () => {
@@ -316,7 +399,7 @@ describe("REST API", () => {
     const form = new FormData();
     form.append(
       "pdf",
-      new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])], { type: "image/png" }),
+      new Blob([makePngBytes()], { type: "image/png" }),
       "score.png"
     );
     const res = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
@@ -353,6 +436,88 @@ describe("REST API", () => {
 
     const fileRes = await fetch(`${base}${updated.pdfUrl}`);
     expect(fileRes.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("creates a share preview from a PDF upload", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "PDF share preview");
+
+    const form = new FormData();
+    form.append("pdf", new Blob([makePdfBytes()], { type: "application/pdf" }), "score.pdf");
+    const updated = await json(
+      await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+        method: "POST",
+        headers: adminHeaders(cookie),
+        body: form,
+      })
+    );
+
+    const sessionPage = await (await fetch(`${base}/session/${updated.code}`)).text();
+    const shareImageUrl = sessionPage.match(/https?:\/\/[^"]+\/share-previews\/[^"]+/)?.[0];
+    expect(shareImageUrl).toBeTruthy();
+    expect(sessionPage).toContain('property="og:image"');
+    const previewUrl = new URL(shareImageUrl!);
+    const previewRes = await fetch(`${base}${previewUrl.pathname}${previewUrl.search}`);
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.headers.get("content-type")).toContain("image/png");
+  });
+
+  it("updates the preview cache-buster when the uploaded document changes", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Swap preview", {
+      documentDescription: "Lead sheet cover image",
+    });
+
+    const upload = async (blob: Blob, name: string) => {
+      const form = new FormData();
+      form.append("pdf", blob, name);
+      form.append("documentDescription", "Lead sheet cover image");
+      return json(
+        await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+          method: "POST",
+          headers: adminHeaders(cookie),
+          body: form,
+        })
+      );
+    };
+
+    const first = await upload(new Blob([makePngBytes()], { type: "image/png" }), "first.png");
+    const firstPage = await (await fetch(`${base}/session/${first.code}`)).text();
+    const firstPreview = firstPage.match(/https?:\/\/[^"]+\/share-previews\/[^"]+/)?.[0];
+
+    const second = await upload(new Blob([makePdfBytes()], { type: "application/pdf" }), "second.pdf");
+    const secondPage = await (await fetch(`${base}/session/${second.code}`)).text();
+    const secondPreview = secondPage.match(/https?:\/\/[^"]+\/share-previews\/[^"]+/)?.[0];
+
+    expect(firstPreview).toBeTruthy();
+    expect(secondPreview).toBeTruthy();
+    expect(secondPreview).not.toBe(firstPreview);
+  });
+
+  it("falls back to the default image when preview generation fails", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Broken preview", {
+      documentDescription: "Lead sheet cover image",
+    });
+
+    const form = new FormData();
+    form.append(
+      "pdf",
+      new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])], { type: "image/png" }),
+      "broken.png"
+    );
+    form.append("documentDescription", "Lead sheet cover image");
+    const updated = await json(
+      await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+        method: "POST",
+        headers: adminHeaders(cookie),
+        body: form,
+      })
+    );
+
+    const sessionPage = await (await fetch(`${base}/session/${updated.code}`)).text();
+    expect(sessionPage).toContain("http://localhost:3000/favicon.svg");
+    expect(sessionPage).not.toContain(`/share-previews/${updated.code}.png?v=`);
   });
 });
 

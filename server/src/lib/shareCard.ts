@@ -1,5 +1,12 @@
 import type { SessionState } from "../types.js";
 
+export type ShareCardMeta = {
+  title: string;
+  description: string;
+  imageUrl?: string;
+  twitterCard: "summary" | "summary_large_image";
+};
+
 /** Escape text for safe interpolation into an HTML attribute or text node. */
 function escapeHtml(value: string): string {
   return value
@@ -18,7 +25,7 @@ function normalize(value: string, maxLength: number): string {
 }
 
 /** The title/description a session should advertise in its share card. */
-export function shareCardMeta(session: SessionState): { title: string; description: string } {
+export function shareCardMeta(session: SessionState, imageUrl?: string): ShareCardMeta {
   const name = normalize(session.title || "Untitled session", 90);
   const rawDescription =
     session.description?.trim() ||
@@ -27,6 +34,8 @@ export function shareCardMeta(session: SessionState): { title: string; descripti
   return {
     title: `${name} · BandScroll`,
     description: normalize(rawDescription, 200),
+    imageUrl,
+    twitterCard: imageUrl ? "summary_large_image" : "summary",
   };
 }
 
@@ -39,9 +48,10 @@ export function shareCardMeta(session: SessionState): { title: string; descripti
 export function injectShareCard(
   html: string,
   session: SessionState,
-  canonicalUrl?: string
+  options: { canonicalUrl?: string; imageUrl?: string } = {}
 ): string {
-  const { title, description } = shareCardMeta(session);
+  const { canonicalUrl, imageUrl } = options;
+  const { title, description, twitterCard } = shareCardMeta(session, imageUrl);
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
 
@@ -66,6 +76,10 @@ export function injectShareCard(
     .replace(
       /(<meta\s+name="twitter:description"\s+content=")[\s\S]*?("\s*\/?>)/,
       `$1${safeDescription}$2`
+    )
+    .replace(
+      /(<meta\s+name="twitter:card"\s+content=")[\s\S]*?("\s*\/?>)/,
+      `$1${twitterCard}$2`
     );
 
   if (canonicalUrl) {
@@ -79,6 +93,19 @@ export function injectShareCard(
     } else {
       out = out.replace(/<\/head>/, `    ${ogUrlTag}\n  </head>`);
     }
+  }
+
+  if (imageUrl) {
+    const safeImageUrl = escapeHtml(imageUrl);
+    out = out
+      .replace(
+        /(<meta\s+property="og:image"\s+content=")[\s\S]*?("\s*\/?>)/,
+        `$1${safeImageUrl}$2`
+      )
+      .replace(
+        /(<meta\s+name="twitter:image"\s+content=")[\s\S]*?("\s*\/?>)/,
+        `$1${safeImageUrl}$2`
+      );
   }
 
   return out;

@@ -14,6 +14,7 @@ export default defineConfig({
       ADMIN_PASSWORD: "test-password-123",
       ADMIN_SESSION_SECRET: "test-session-secret-which-is-long-enough",
       UPLOAD_DIR: join(tmpdir(), "bandscroll-test-uploads"),
+      SHARE_PREVIEW_DIR: join(tmpdir(), "bandscroll-test-share-previews"),
       PUBLIC_BASE_URL: "http://localhost:3000",
     },
     // Socket.IO integration tests share a module-level store/io singleton, so

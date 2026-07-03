@@ -9,8 +9,8 @@ RUN npm run build
 # ---- Stage 2: build the Node server ----
 FROM node:22-alpine AS server-build
 WORKDIR /app/server
-# Toolchain for better-sqlite3's native addon (no musl prebuilds on Alpine).
-RUN apk add --no-cache python3 make g++
+# Toolchain for better-sqlite3 and canvas native addons on Alpine.
+RUN apk add --no-cache python3 make g++ cairo-dev pango-dev jpeg-dev giflib-dev
 COPY server/package*.json ./
 RUN npm ci
 COPY server/ ./
@@ -22,10 +22,11 @@ ENV NODE_ENV=production
 WORKDIR /app/server
 
 # Install only production deps for the server. better-sqlite3 has no musl
-# prebuild, so compile its native addon here, then drop the toolchain to keep
-# the runtime image small.
+# prebuild, and canvas also needs native libraries, so compile them here and
+# then drop the build toolchain to keep the runtime image small.
 COPY server/package*.json ./
-RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+RUN apk add --no-cache cairo pango jpeg giflib \
+  && apk add --no-cache --virtual .build-deps python3 make g++ cairo-dev pango-dev jpeg-dev giflib-dev \
   && npm ci --omit=dev \
   && apk del .build-deps
 
