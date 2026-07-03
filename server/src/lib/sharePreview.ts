@@ -14,6 +14,9 @@ const HERO_X = 56;
 const HERO_Y = 56;
 const HERO_WIDTH = 640;
 const HERO_HEIGHT = 518;
+const HERO_PLACEHOLDER_TEXT = "Preview unavailable";
+
+type PreviewImage = Awaited<ReturnType<typeof loadImage>>;
 
 function ensureSharePreviewDir(previewDir: string = env.SHARE_PREVIEW_DIR): void {
   if (!existsSync(previewDir)) {
@@ -107,6 +110,7 @@ async function renderPdfFirstPage(uploadPath: string): Promise<Buffer> {
     isEvalSupported: false,
     useSystemFonts: false,
     standardFontDataUrl: standardFontDataUrl(),
+    verbosity: 0,
   } as any);
   const pdf = await loadingTask.promise;
 
@@ -128,24 +132,60 @@ async function renderPdfFirstPage(uploadPath: string): Promise<Buffer> {
   }
 }
 
-async function renderSourceImage(session: SessionState, uploadPath: string) {
+async function renderSourceImage(
+  session: SessionState,
+  uploadPath: string
+): Promise<PreviewImage | undefined> {
   const uploadFilename = extractUploadFilename(session.pdfUrl);
   if (!uploadFilename) {
     throw new Error("missing-upload-filename");
   }
 
-  if (uploadFilename.toLowerCase().endsWith(".pdf")) {
-    const pageImage = await renderPdfFirstPage(uploadPath);
-    return loadImage(pageImage);
-  }
+  try {
+    if (uploadFilename.toLowerCase().endsWith(".pdf")) {
+      const pageImage = await renderPdfFirstPage(uploadPath);
+      return await loadImage(pageImage);
+    }
 
-  return loadImage(uploadPath);
+    return await loadImage(uploadPath);
+  } catch (err) {
+    logger.warn("share preview source rendering failed; using fallback art", {
+      sessionId: session.id,
+      code: session.code,
+      pdfUrl: session.pdfUrl,
+      uploadPath,
+      err,
+    });
+    return undefined;
+  }
+}
+
+function drawFallbackHero(ctx: SKRSContext2D): void {
+  const gradient = ctx.createLinearGradient(HERO_X, HERO_Y, HERO_X + HERO_WIDTH, HERO_Y + HERO_HEIGHT);
+  gradient.addColorStop(0, "#f3d9c4");
+  gradient.addColorStop(0.5, "#ecd4ba");
+  gradient.addColorStop(1, "#d7ddcd");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(HERO_X, HERO_Y, HERO_WIDTH, HERO_HEIGHT);
+
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = "#8f6d5d";
+  ctx.beginPath();
+  ctx.arc(HERO_X + 154, HERO_Y + 146, 118, 0, Math.PI * 2);
+  ctx.arc(HERO_X + 520, HERO_Y + 410, 144, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = "#6b574e";
+  ctx.font = "600 22px sans-serif";
+  ctx.fillText(HERO_PLACEHOLDER_TEXT, HERO_X + 34, HERO_Y + HERO_HEIGHT - 46);
 }
 
 function drawPreviewFrame(
   ctx: SKRSContext2D,
   session: SessionState,
-  image: Awaited<ReturnType<typeof loadImage>>
+  image?: PreviewImage
 ): void {
   const backgroundGradient = ctx.createLinearGradient(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
   backgroundGradient.addColorStop(0, "#fdf8f3");
@@ -154,11 +194,13 @@ function drawPreviewFrame(
   ctx.fillStyle = backgroundGradient;
   ctx.fillRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
 
-  ctx.save();
-  ctx.globalAlpha = 0.16;
-  const backdrop = coverRect(image.width, image.height, PREVIEW_WIDTH, PREVIEW_HEIGHT);
-  ctx.drawImage(image, backdrop.x, backdrop.y, backdrop.width, backdrop.height);
-  ctx.restore();
+  if (image) {
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    const backdrop = coverRect(image.width, image.height, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+    ctx.drawImage(image, backdrop.x, backdrop.y, backdrop.width, backdrop.height);
+    ctx.restore();
+  }
 
   ctx.fillStyle = "rgba(41, 24, 18, 0.12)";
   ctx.fillRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
@@ -168,14 +210,12 @@ function drawPreviewFrame(
   ctx.clip();
   ctx.fillStyle = "#efe7dd";
   ctx.fillRect(HERO_X, HERO_Y, HERO_WIDTH, HERO_HEIGHT);
-  const hero = containRect(image.width, image.height, HERO_WIDTH, HERO_HEIGHT);
-  ctx.drawImage(
-    image,
-    HERO_X + hero.x,
-    HERO_Y + hero.y,
-    hero.width,
-    hero.height
-  );
+  if (image) {
+    const hero = containRect(image.width, image.height, HERO_WIDTH, HERO_HEIGHT);
+    ctx.drawImage(image, HERO_X + hero.x, HERO_Y + hero.y, hero.width, hero.height);
+  } else {
+    drawFallbackHero(ctx);
+  }
   ctx.restore();
 
   ctx.strokeStyle = "rgba(255,255,255,0.6)";

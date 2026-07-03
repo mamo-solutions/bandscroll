@@ -125,6 +125,20 @@ describe("share preview generation", () => {
     );
   });
 
+  it("falls back to a branded preview when PDF rendering fails", async () => {
+    const uploadName = "broken.pdf";
+    writeFileSync(join(uploadDir, uploadName), Buffer.from("not-a-real-pdf", "utf8"));
+    const session = makeSession(`/uploads/${uploadName}`);
+
+    const created = await generateSessionSharePreview(session, uploadDir, previewDir);
+    const previewBytes = readFileSync(join(previewDir, "SESSION-1234.png"));
+
+    expect(created).toBe(true);
+    expect(existsSync(join(previewDir, "SESSION-1234.png"))).toBe(true);
+    expect(previewBytes.subarray(0, 8)).toEqual(makePngBytes().subarray(0, 8));
+    expect(previewBytes.byteLength).toBeGreaterThan(1024);
+  });
+
   it("builds a stable preview url and resolves public paths", () => {
     const session = makeSession("/uploads/score.pdf");
     const url = sessionSharePreviewUrl(session, "https://example.com");

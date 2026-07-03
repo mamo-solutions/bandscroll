@@ -20,6 +20,13 @@ export default defineConfig({
     // Socket.IO integration tests share a module-level store/io singleton, so
     // run files sequentially in one process.
     fileParallelism: false,
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        singleFork: true,
+        isolate: false,
+      },
+    },
     testTimeout: 10000,
   },
 });
