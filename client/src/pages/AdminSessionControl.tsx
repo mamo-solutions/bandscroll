@@ -604,12 +604,14 @@ export function AdminSessionControl() {
   }
 
   /** Scroll-mode auto-stop: halt playback the moment this frame's advance
-   *  crosses a song boundary (a marker page's scroll position), via the normal
-   *  authoritative pause. Detection is a crossing test against the previous
-   *  frame's progress — NOT `getCurrentPage()`, whose nearest-page rounding
-   *  flips a boundary early and would skip it. A manual seek moves progress
-   *  outside this loop, so it never spans a boundary here and can't false-fire.
-   *  Page mode is handled server-side in nextPlaybackPatch. */
+   *  crosses a song boundary, via the normal authoritative pause. The stop
+   *  lands one viewport-height *before* the next song's page top, so the boundary
+   *  sits at the bottom of the screen and the finishing song's last page stays
+   *  visible (rather than scrolling the next song fully into view). Detection is
+   *  a crossing test against the previous frame's progress — NOT `getCurrentPage()`,
+   *  whose nearest-page rounding flips a boundary early and would skip it. A
+   *  manual seek moves progress outside this loop, so it never spans a boundary
+   *  here and can't false-fire. Page mode is handled server-side in nextPlaybackPatch. */
   function maybeAutoStopAtSongEnd(prevProgress: number) {
     const currentSession = stateRef.current;
     if (!currentSession?.autoStopAtSongEnd || !currentSession.playing) return;
@@ -617,12 +619,22 @@ export function AdminSessionControl() {
     if (!viewer) return;
     const newProgress = liveProgressRef.current;
     if (newProgress <= prevProgress) return;
+    const metrics = viewer.getScrollMetrics();
     const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
     for (const marker of markers) {
-      const stopProgress =
+      const pageTopProgress =
         viewer.getProgressForPage(marker.page) ??
         clamp01((marker.page - 1) / Math.max(numPagesRef.current, 1));
-      if (stopProgress <= 0) continue; // a song at the document start is never a stop
+      if (pageTopProgress <= 0) continue; // a song at the document start is never a stop
+      // Back off one viewport so the next song's page rests just below the fold.
+      const stopProgress =
+        metrics && metrics.maxScrollPx > 0
+          ? clamp01(
+              (pageTopProgress * metrics.maxScrollPx - metrics.viewportHeightPx) /
+                metrics.maxScrollPx
+            )
+          : pageTopProgress;
+      if (stopProgress <= 0) continue; // boundary within a viewport of the start
       if (prevProgress < stopProgress && stopProgress <= newProgress) {
         liveProgressRef.current = stopProgress;
         autoStopEngagedRef.current = true;
