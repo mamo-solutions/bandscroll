@@ -19,6 +19,7 @@ import {
   getVisiblePageRange,
 } from "./pdfViewerLayout";
 import {
+  getDarkPixelBottomFraction,
   getSongEndProgress,
   getTextBottomInPagePx,
   type PdfViewportLike,
@@ -45,6 +46,7 @@ const PAGE_DPR =
 const OVERSCAN = 2;
 const PAGE_GAP = 12; // matches the flex `gap-3` between page wrappers
 const PAGE_TOP = 12; // matches `pt-3` top padding
+const VISUAL_ANALYSIS_WIDTH = 320;
 
 export type PdfViewerHandle = {
   scrollToProgress: (progress: number) => void;
@@ -73,6 +75,11 @@ type PdfTextContentLike = {
 type PdfTextPageLike = {
   getViewport: (params: { scale: number }) => PdfViewportLike & { width: number };
   getTextContent: () => Promise<PdfTextContentLike>;
+  render: (params: {
+    canvasContext: CanvasRenderingContext2D;
+    viewport: PdfViewportLike & { width: number };
+    canvas: HTMLCanvasElement;
+  }) => { promise: Promise<void> };
 };
 
 type PdfTextDocumentLike = {
@@ -146,6 +153,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const observedPageElementsRef = useRef<(HTMLDivElement | null)[]>([]);
   const pdfDocumentRef = useRef<PdfTextDocumentLike | null>(null);
   const pageTextBottomFractionPromisesRef = useRef(new Map<number, Promise<number | null>>());
+  const pageVisualBottomFractionPromisesRef = useRef(new Map<number, Promise<number | null>>());
   const { t } = useI18n();
 
   const isImage = IMAGE_RE.test(fileUrl);
@@ -168,6 +176,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     readyRef.current = false;
     pdfDocumentRef.current = null;
     pageTextBottomFractionPromisesRef.current.clear();
+    pageVisualBottomFractionPromisesRef.current.clear();
   }, [fileUrl]);
 
   // Ready = safe to drive programmatic scrolling. Avoids scrolling before the
@@ -309,6 +318,39 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     []
   );
 
+  const getPageVisualBottomFraction = useCallback(
+    (pageNumber: number): Promise<number | null> => {
+      const existing = pageVisualBottomFractionPromisesRef.current.get(pageNumber);
+      if (existing) return existing;
+      const pdf = pdfDocumentRef.current;
+      if (!pdf || typeof document === "undefined") return Promise.resolve(null);
+
+      const promise = pdf
+        .getPage(pageNumber)
+        .then(async (page) => {
+          const unscaledViewport = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({
+            scale: VISUAL_ANALYSIS_WIDTH / Math.max(1, unscaledViewport.width),
+          });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.ceil(viewport.width));
+          canvas.height = Math.max(1, Math.ceil(viewport.height));
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return null;
+          await page.render({ canvasContext: context, viewport, canvas }).promise;
+          return getDarkPixelBottomFraction(
+            context.getImageData(0, 0, canvas.width, canvas.height).data,
+            canvas.width,
+            canvas.height
+          );
+        })
+        .catch(() => null);
+      pageVisualBottomFractionPromisesRef.current.set(pageNumber, promise);
+      return promise;
+    },
+    []
+  );
+
   const getSongEndProgressForRange = useCallback(
     async (startPage: number, nextMarkerPage: number, bottomBufferFraction: number) => {
       const pdf = pdfDocumentRef.current;
@@ -321,9 +363,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
       for (let pageNumber = firstPage; pageNumber <= finalPage; pageNumber += 1) {
         const textBottomFraction = await getPageTextBottomFraction(pageNumber);
+        const contentBottomFraction =
+          textBottomFraction ?? (await getPageVisualBottomFraction(pageNumber));
         const pageHeight = effectivePageHeights[pageNumber - 1];
-        if (textBottomFraction !== null && pageHeight !== undefined) {
-          finalTextBottom = { page: pageNumber, bottomPx: textBottomFraction * pageHeight };
+        if (contentBottomFraction !== null && pageHeight !== undefined) {
+          finalTextBottom = { page: pageNumber, bottomPx: contentBottomFraction * pageHeight };
         }
       }
 
@@ -341,6 +385,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     [
       effectivePageHeights,
       getPageTextBottomFraction,
+      getPageVisualBottomFraction,
       getScrollMetrics,
       numPages,
       pageTopOffsets,
@@ -582,7 +627,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               const nextPageAspects = await loadPdfPageAspects(pdf);
               if (loadId !== fileLoadIdRef.current) return;
               setPageAspects(nextPageAspects);
-              pdfDocumentRef.current = pdf as PdfTextDocumentLike;
+              pdfDocumentRef.current = pdf as unknown as PdfTextDocumentLike;
               setNumPages(pdf.numPages);
               setLoading(false);
               onDocumentLoad?.(pdf.numPages);
