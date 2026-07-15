@@ -50,6 +50,7 @@ export function SessionViewer() {
   const hasEverConnectedLiveRef = useRef(false);
   const awaitingSocketSnapshotRef = useRef(false);
   const anchorProgressRef = useRef<number | null>(null);
+  const playbackProgressOffsetRef = useRef(0);
   const lastAnchorRef = useRef<SessionState["scrollAnchor"]>(undefined);
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
@@ -144,16 +145,22 @@ export function SessionViewer() {
           }
           const shouldSnapToAnchor =
             previousSession === null ||
-            !nextSession.playing ||
-            previousSession.playing !== nextSession.playing;
+            (!nextSession.playing && anchorChanged);
           if (localProgress !== null && shouldSnapToAnchor) {
             displayedRef.current = localProgress;
             viewerRef.current.scrollToAnchor(nextSession.scrollAnchor);
             setUiProgress(localProgress);
+            playbackProgressOffsetRef.current = nextSession.playing
+              ? localProgress - nextSession.progress
+              : 0;
+          }
+          if (previousSession?.playing === false && nextSession.playing) {
+            playbackProgressOffsetRef.current = displayedRef.current - nextSession.progress;
           }
         } else if (
           shouldSnapToSessionState(previousSession, nextSession, displayedRef.current)
         ) {
+          playbackProgressOffsetRef.current = 0;
           displayedRef.current = nextSession.progress;
           viewerRef.current?.scrollToProgress(nextSession.progress);
           setUiProgress(nextSession.progress);
@@ -213,7 +220,14 @@ export function SessionViewer() {
           const target =
             !currentSession.playing && anchorProgressRef.current !== null
               ? anchorProgressRef.current
-              : effectiveProgressFromElapsed(currentSession, elapsed);
+              : Math.min(
+                  1,
+                  Math.max(
+                    0,
+                    effectiveProgressFromElapsed(currentSession, elapsed) +
+                      playbackProgressOffsetRef.current
+                  )
+                );
           const current = displayedRef.current;
           const diff = target - current;
           const next = Math.abs(diff) > 0.04 ? target : current + diff * 0.18;
