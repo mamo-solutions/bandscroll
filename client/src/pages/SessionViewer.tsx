@@ -50,8 +50,6 @@ export function SessionViewer() {
   const hasEverConnectedLiveRef = useRef(false);
   const awaitingSocketSnapshotRef = useRef(false);
   const anchorProgressRef = useRef<number | null>(null);
-  const anchorReceivedAtRef = useRef(0);
-  const anchorSpeedRef = useRef(0);
   const lastAnchorRef = useRef<SessionState["scrollAnchor"]>(undefined);
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
@@ -80,14 +78,20 @@ export function SessionViewer() {
     const currentSession = stateRef.current;
     const viewer = viewerRef.current;
     const anchor = currentSession?.scrollAnchor;
-    if (!currentSession || currentSession.playbackMode !== "scroll" || !anchor || !viewer) return;
+    if (
+      !currentSession ||
+      currentSession.playing ||
+      currentSession.playbackMode !== "scroll" ||
+      !anchor ||
+      !viewer
+    ) {
+      return;
+    }
 
     const localProgress = viewer.getProgressForAnchor(anchor);
     if (localProgress === null) return;
 
     anchorProgressRef.current = localProgress;
-    anchorReceivedAtRef.current = Date.now();
-    anchorSpeedRef.current = 0;
     lastAnchorRef.current = anchor;
     displayedRef.current = localProgress;
     viewer.scrollToAnchor(anchor);
@@ -135,15 +139,7 @@ export function SessionViewer() {
             lastAnchorRef.current?.page !== nextSession.scrollAnchor.page ||
             lastAnchorRef.current?.fraction !== nextSession.scrollAnchor.fraction;
           if (localProgress !== null && anchorChanged) {
-            const now = Date.now();
-            const previousProgress = anchorProgressRef.current;
-            const elapsedMs = now - anchorReceivedAtRef.current;
-            anchorSpeedRef.current =
-              nextSession.playing && previousProgress !== null && elapsedMs > 0
-                ? (localProgress - previousProgress) / (elapsedMs / 1000)
-                : 0;
             anchorProgressRef.current = localProgress;
-            anchorReceivedAtRef.current = now;
             lastAnchorRef.current = nextSession.scrollAnchor;
           }
           const shouldSnapToAnchor =
@@ -210,18 +206,13 @@ export function SessionViewer() {
         const viewer = viewerRef.current;
         if (currentSession && viewer && currentSession.playbackMode === "scroll") {
           const elapsed = currentSession.playing ? Date.now() - receivedAtRef.current : 0;
+          // While playing, progress + speed supplies a continuous trajectory.
+          // Anchors arrive as discrete host snapshots, so applying them as the
+          // trajectory causes a visible correction every sync interval. Keep
+          // anchors for exact pauses and manual seeks instead.
           const target =
-            currentSession.scrollAnchor && anchorProgressRef.current !== null
-              ? currentSession.playing
-                ? Math.min(
-                    1,
-                    Math.max(
-                      0,
-                      anchorProgressRef.current +
-                        (Date.now() - anchorReceivedAtRef.current) / 1000 * anchorSpeedRef.current
-                    )
-                  )
-                : anchorProgressRef.current
+            !currentSession.playing && anchorProgressRef.current !== null
+              ? anchorProgressRef.current
               : effectiveProgressFromElapsed(currentSession, elapsed);
           const current = displayedRef.current;
           const diff = target - current;

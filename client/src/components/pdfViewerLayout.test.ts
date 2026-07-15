@@ -34,6 +34,17 @@ describe("scroll anchors", () => {
       pageTops[2]
     );
   });
+
+  it("preserves a small marker-heading padding above a page start", () => {
+    const tops = [12, 164, 596];
+    const heights = [140, 420, 140];
+    const markerTop = tops[2];
+    const paddedTop = markerTop - 40;
+    const anchor = scrollTopToAnchor(paddedTop, tops, heights);
+
+    expect(anchor).toEqual({ page: 2, fraction: 0.9333333333333333 });
+    expect(anchorToScrollTop(anchor!, tops, heights, 700)).toBe(paddedTop);
+  });
 });
 
 describe("getReservedPageHeights", () => {

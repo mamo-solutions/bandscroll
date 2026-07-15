@@ -111,6 +111,7 @@ export function AdminSessionControl() {
 
   const KB_SCREENS_STEP = 0.5;
   const FACTORY_SPEED = 0.0002;
+  const MARKER_TOP_PADDING_PX = 40;
   const socket = getSocket();
   const socketStatus = useSocketStatus();
 
@@ -339,15 +340,11 @@ export function AdminSessionControl() {
           viewer.scrollToProgress(liveProgressRef.current);
           const now = Date.now();
           if (now - lastAnchorBroadcastAtRef.current >= 250) {
-            const scrollAnchor = viewer.getScrollAnchor();
-            if (scrollAnchor) {
-              lastAnchorBroadcastAtRef.current = now;
-              socket.emit("admin-sync", {
-                sessionId: id,
-                progress: liveProgressRef.current,
-                scrollAnchor,
-              });
-            }
+            lastAnchorBroadcastAtRef.current = now;
+            socket.emit("admin-sync", {
+              sessionId: id,
+              progress: liveProgressRef.current,
+            });
           }
         } else {
           autoStopEngagedRef.current = false;
@@ -802,8 +799,9 @@ export function AdminSessionControl() {
       pause();
       return;
     }
-    const scrollAnchor = { page, fraction: 0 };
     const viewer = viewerRef.current;
+    const scrollAnchor =
+      viewer?.getScrollAnchorForPage(page, MARKER_TOP_PADDING_PX) ?? { page, fraction: 0 };
     const progress =
       viewer?.getProgressForAnchor(scrollAnchor) ??
       viewer?.getProgressForPage(page) ??

@@ -58,6 +58,7 @@ export type PdfViewerHandle = {
   getCurrentProgress: () => number;
   getScrollMetrics: () => PdfViewerScrollMetrics | null;
   getScrollAnchor: () => ScrollAnchor | null;
+  getScrollAnchorForPage: (page: number, topPaddingPx: number) => ScrollAnchor | null;
   getProgressForAnchor: (anchor: ScrollAnchor) => number | null;
   scrollToAnchor: (anchor: ScrollAnchor) => void;
   getSongEndProgress: (
@@ -318,6 +319,17 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return scrollTopToAnchor(el.scrollTop, pageTopOffsets, effectivePageHeights);
   };
 
+  const getScrollAnchorForPage = (page: number, topPaddingPx: number): ScrollAnchor | null => {
+    if (!hasScrollGeometry()) return null;
+    const pageTop = pageRefs.current[page - 1]?.offsetTop ?? pageTopOffsets[page - 1];
+    if (pageTop === undefined) return null;
+    return scrollTopToAnchor(
+      Math.max(0, pageTop - Math.max(0, topPaddingPx)),
+      pageTopOffsets,
+      effectivePageHeights
+    );
+  };
+
   const getProgressForAnchor = (anchor: ScrollAnchor): number | null => {
     if (!hasScrollGeometry()) return null;
     const scrollTop = anchorToScrollTop(anchor, pageTopOffsets, effectivePageHeights, maxScroll());
@@ -461,6 +473,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       getProgressForPage,
       getCurrentPage,
       getScrollAnchor,
+      getScrollAnchorForPage,
       getProgressForAnchor,
       getCurrentProgress() {
         if (singlePageMode) return pageProgress(clampedVisiblePage, numPages);
@@ -474,7 +487,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return numPages;
       },
     }),
-    [clampedVisiblePage, effectivePageHeights, getProgressForAnchor, getProgressForPage, getScrollAnchor, getScrollMetrics, getSongEndProgressForRange, numPages, pageTopOffsets, singlePageMode]
+    [clampedVisiblePage, effectivePageHeights, getProgressForAnchor, getProgressForPage, getScrollAnchor, getScrollAnchorForPage, getScrollMetrics, getSongEndProgressForRange, numPages, pageTopOffsets, singlePageMode]
   );
 
   useEffect(() => {
