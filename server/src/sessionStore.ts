@@ -10,6 +10,10 @@ export function configureSessionStore(newAdapter: SessionStoreAdapter): void {
   adapter = newAdapter;
 }
 
+export function clearSessionStore(): void {
+  adapter.clear();
+}
+
 function generateCode(): string {
   // e.g. SESSION-7421 — re-roll on the (very unlikely) collision.
   for (let attempt = 0; attempt < 50; attempt++) {

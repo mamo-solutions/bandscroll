@@ -18,6 +18,11 @@ import {
   getSinglePageWidth,
   getVisiblePageRange,
 } from "./pdfViewerLayout";
+import {
+  getSongEndProgress,
+  getTextBottomInPagePx,
+  type PdfViewportLike,
+} from "./pdfTextBounds";
 
 // Errors-only verbosity: silences harmless "TT: undefined function" font
 // warnings from PDF.js. Module-level constant so react-pdf doesn't reload.
@@ -48,7 +53,31 @@ export type PdfViewerHandle = {
   getCurrentPage: () => number;
   getCurrentProgress: () => number;
   getScrollMetrics: () => PdfViewerScrollMetrics | null;
+  getSongEndProgress: (
+    startPage: number,
+    nextMarkerPage: number,
+    bottomBufferFraction: number
+  ) => Promise<number | null>;
   readonly numPages: number;
+};
+
+type PdfTextContentLike = {
+  items: Array<{
+    str: string;
+    transform: number[];
+    width: number;
+    height: number;
+  }>;
+};
+
+type PdfTextPageLike = {
+  getViewport: (params: { scale: number }) => PdfViewportLike & { width: number };
+  getTextContent: () => Promise<PdfTextContentLike>;
+};
+
+type PdfTextDocumentLike = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfTextPageLike>;
 };
 
 export type PdfViewerScrollMetrics = {
@@ -115,6 +144,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const fileLoadIdRef = useRef(0);
   const pageHeightObserverRef = useRef<ResizeObserver | null>(null);
   const observedPageElementsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const pdfDocumentRef = useRef<PdfTextDocumentLike | null>(null);
+  const pageTextBottomFractionPromisesRef = useRef(new Map<number, Promise<number | null>>());
   const { t } = useI18n();
 
   const isImage = IMAGE_RE.test(fileUrl);
@@ -135,6 +166,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     pageRefs.current = [];
     observedPageElementsRef.current = [];
     readyRef.current = false;
+    pdfDocumentRef.current = null;
+    pageTextBottomFractionPromisesRef.current.clear();
   }, [fileUrl]);
 
   // Ready = safe to drive programmatic scrolling. Avoids scrolling before the
@@ -252,6 +285,69 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return nearestPage;
   };
 
+  const getPageTextBottomFraction = useCallback(
+    (pageNumber: number): Promise<number | null> => {
+      const existing = pageTextBottomFractionPromisesRef.current.get(pageNumber);
+      if (existing) return existing;
+      const pdf = pdfDocumentRef.current;
+      if (!pdf) return Promise.resolve(null);
+
+      const promise = pdf
+        .getPage(pageNumber)
+        .then(async (page) => {
+          const [textContent, viewport] = await Promise.all([
+            page.getTextContent(),
+            Promise.resolve(page.getViewport({ scale: 1 })),
+          ]);
+          const textBottom = getTextBottomInPagePx(textContent.items, viewport, viewport.height);
+          return textBottom === null ? null : textBottom / viewport.height;
+        })
+        .catch(() => null);
+      pageTextBottomFractionPromisesRef.current.set(pageNumber, promise);
+      return promise;
+    },
+    []
+  );
+
+  const getSongEndProgressForRange = useCallback(
+    async (startPage: number, nextMarkerPage: number, bottomBufferFraction: number) => {
+      const pdf = pdfDocumentRef.current;
+      const metrics = getScrollMetrics();
+      if (!pdf || !metrics || singlePageMode || nextMarkerPage <= startPage) return null;
+
+      const firstPage = clampPage(startPage, numPages);
+      const finalPage = clampPage(nextMarkerPage - 1, numPages);
+      let finalTextBottom: { page: number; bottomPx: number } | null = null;
+
+      for (let pageNumber = firstPage; pageNumber <= finalPage; pageNumber += 1) {
+        const textBottomFraction = await getPageTextBottomFraction(pageNumber);
+        const pageHeight = effectivePageHeights[pageNumber - 1];
+        if (textBottomFraction !== null && pageHeight !== undefined) {
+          finalTextBottom = { page: pageNumber, bottomPx: textBottomFraction * pageHeight };
+        }
+      }
+
+      if (!finalTextBottom) return null;
+      const pageTop = pageRefs.current[finalTextBottom.page - 1]?.offsetTop ?? pageTopOffsets[finalTextBottom.page - 1];
+      if (pageTop === undefined) return null;
+      return getSongEndProgress({
+        pageTopPx: pageTop,
+        textBottomInPagePx: finalTextBottom.bottomPx,
+        viewportHeightPx: metrics.viewportHeightPx,
+        maxScrollPx: metrics.maxScrollPx,
+        bottomBufferFraction,
+      });
+    },
+    [
+      effectivePageHeights,
+      getPageTextBottomFraction,
+      getScrollMetrics,
+      numPages,
+      pageTopOffsets,
+      singlePageMode,
+    ]
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -285,11 +381,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return clamp01(el.scrollTop / maxScroll());
       },
       getScrollMetrics,
+      getSongEndProgress: getSongEndProgressForRange,
       get numPages() {
         return numPages;
       },
     }),
-    [clampedVisiblePage, getProgressForPage, getScrollMetrics, numPages, pageTopOffsets, singlePageMode]
+    [clampedVisiblePage, getProgressForPage, getScrollMetrics, getSongEndProgressForRange, numPages, pageTopOffsets, singlePageMode]
   );
 
   useEffect(() => {
@@ -485,6 +582,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               const nextPageAspects = await loadPdfPageAspects(pdf);
               if (loadId !== fileLoadIdRef.current) return;
               setPageAspects(nextPageAspects);
+              pdfDocumentRef.current = pdf as PdfTextDocumentLike;
               setNumPages(pdf.numPages);
               setLoading(false);
               onDocumentLoad?.(pdf.numPages);

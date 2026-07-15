@@ -14,6 +14,7 @@ import {
 import type { SessionState } from "../types.js";
 import { logger } from "../lib/logger.js";
 import { metrics } from "../lib/metrics.js";
+import type { MarkerGenerationSocketEvent } from "../ai/types.js";
 import {
   nextPlaybackPatch,
   pageStartProgress,
@@ -28,6 +29,7 @@ const PLAYBACK_LOOP_MS = 250;
 const PLAYBACK_SCROLL_TICK_MS = 250;
 const PLAYBACK_PAGE_TICK_MS = 500;
 const lastPlaybackTickAt = new Map<string, number>();
+const ADMIN_ROOM = "admins";
 
 function roomFor(code: string): string {
   return `session:${code}`;
@@ -91,6 +93,10 @@ export function initSocketServer(
 
   io.on("connection", (socket) => {
     log.info("connect", { id: socket.id, total: metrics.incSocket() });
+    if (isAdminSocket(socket)) {
+      socket.join(ADMIN_ROOM);
+      log.debug("admin room join", { id: socket.id });
+    }
 
     // Track which session room this socket counts towards so we can decrement
     // exactly once on leave/disconnect.
@@ -386,4 +392,10 @@ export function broadcastSessionEnded(session: SessionState): void {
 /** Notify everyone the public session list changed (created/started/ended). */
 export function broadcastSessionListUpdated(): void {
   io?.emit("session-list-updated");
+}
+
+export function broadcastAdminMarkerGenerationUpdated(
+  payload: MarkerGenerationSocketEvent
+): void {
+  io?.to(ADMIN_ROOM).emit("admin-marker-generation-updated", payload);
 }

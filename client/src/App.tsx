@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { AdminAppShell } from "./components/AdminAppShell";
 import { HeaderSlotProvider } from "./components/HeaderSlot";
 import { RequireAdminAuth } from "./components/RequireAdminAuth";
 import { PublicHome } from "./pages/PublicHome";
@@ -23,26 +24,14 @@ export default function App() {
           path="/admin"
           element={
             <RequireAdminAuth>
-              <AdminDashboard />
+              <AdminAppShell />
             </RequireAdminAuth>
           }
-        />
-        <Route
-          path="/admin/ai"
-          element={
-            <RequireAdminAuth>
-              <AdminAiSettings />
-            </RequireAdminAuth>
-          }
-        />
-        <Route
-          path="/admin/session/:id"
-          element={
-            <RequireAdminAuth>
-              <AdminSessionControl />
-            </RequireAdminAuth>
-          }
-        />
+        >
+          <Route index element={<AdminDashboard />} />
+          <Route path="ai" element={<AdminAiSettings />} />
+          <Route path="session/:id" element={<AdminSessionControl />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

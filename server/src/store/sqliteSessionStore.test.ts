@@ -107,6 +107,20 @@ describe("SqliteSessionStore", () => {
     store.close();
   });
 
+  it("clears all persisted sessions", () => {
+    const store = new SqliteSessionStore(dataDir);
+    store.set("a", makeSession({ id: "a" }));
+    store.set("b", makeSession({ id: "b" }));
+
+    store.clear();
+    expect([...store.values()]).toHaveLength(0);
+    store.close();
+
+    const reloaded = new SqliteSessionStore(dataDir);
+    expect([...reloaded.values()]).toHaveLength(0);
+    reloaded.close();
+  });
+
   it("starts empty when the data directory is fresh", () => {
     const store = new SqliteSessionStore(dataDir);
     expect([...store.values()]).toHaveLength(0);

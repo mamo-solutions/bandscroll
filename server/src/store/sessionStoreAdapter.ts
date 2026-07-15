@@ -16,4 +16,7 @@ export interface SessionStoreAdapter {
 
   /** Iterate all sessions. */
   values(): IterableIterator<SessionState>;
+
+  /** Remove all sessions from the backing store. Intended for tests/reset hooks. */
+  clear(): void;
 }

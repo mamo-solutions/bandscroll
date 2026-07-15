@@ -37,3 +37,76 @@ export type AiConnectionTestResult = {
   error?: "missing-api-key" | "invalid-api-key" | "network-error" | "provider-error";
   message?: string;
 };
+
+export type MarkerSuggestionClassification =
+  | "song-start"
+  | "song-continuation"
+  | "front-matter"
+  | "non-song"
+  | "uncertain";
+
+export type MarkerGenerationStatus = "idle" | "running" | "ready" | "error";
+
+export type MarkerSuggestion = {
+  id: string;
+  title: string;
+  page: number;
+  confidence: number;
+  classification: MarkerSuggestionClassification;
+  reason: string;
+  source: "ai";
+};
+
+export type MarkerGenerationRunMetadata = {
+  provider: AiProvider;
+  model: string;
+  durationMs: number;
+  pagesAnalyzed: number;
+  visionPagesAnalyzed: number;
+  uncertainPageCount: number;
+};
+
+export type MarkerSuggestionSummary = {
+  suggestionCount: number;
+  averageConfidence: number;
+  uncertainCount: number;
+};
+
+export type MarkerSuggestionSet = {
+  sessionId: string;
+  pdfUrl: string;
+  documentFingerprint: string;
+  provider: AiProvider;
+  model: string;
+  status: MarkerGenerationStatus;
+  suggestions: MarkerSuggestion[];
+  summary: MarkerSuggestionSummary;
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
+  run?: MarkerGenerationRunMetadata;
+};
+
+export type AdminNotification = {
+  id: string;
+  type: "marker-generation-completed";
+  sessionId: string;
+  sessionCode: string;
+  sessionTitle: string;
+  status: "ready" | "error";
+  suggestionCount: number;
+  message: string;
+  createdAt: number;
+  acknowledgedAt?: number;
+};
+
+export type MarkerGenerationSocketEvent = {
+  notificationId: string;
+  sessionId: string;
+  sessionCode: string;
+  sessionTitle: string;
+  status: "ready" | "error";
+  suggestionCount: number;
+  updatedAt: number;
+  error?: string;
+};

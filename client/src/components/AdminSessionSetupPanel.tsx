@@ -3,7 +3,9 @@ import {
   FileEdit,
   FileUp,
   FileWarning,
+  Loader2,
   Music,
+  Sparkles,
   RefreshCw,
   Square,
   StopCircle,
@@ -28,6 +30,7 @@ import {
   SHORTCUT_OPTIONS,
 } from "@/lib/adminShortcuts";
 import { cn } from "@/lib/utils";
+import type { MarkerSuggestion, MarkerSuggestionSet } from "@/types/ai";
 import type {
   PlaybackMode,
   SessionBackgroundMode,
@@ -39,8 +42,14 @@ type Props = {
   numPages: number;
   session: SessionState;
   uploading: boolean;
+  markerGenerationAvailable: boolean;
+  generatingMarkers: boolean;
+  markerSuggestionSet: MarkerSuggestionSet | null;
   onAddMarker: (title: string, page: number) => void;
   onDeleteMarker: (id: string) => void;
+  onGenerateMarkers: () => Promise<void>;
+  onApplyMarkerSuggestions: (suggestions: MarkerSuggestion[]) => Promise<void>;
+  onDiscardMarkerSuggestions: () => Promise<void>;
   onOpenFilePicker: () => void;
   onSeekToMarker: (marker: SongMarker) => void;
   onSetPlaybackMode: (playbackMode: PlaybackMode) => void;
@@ -62,8 +71,14 @@ export function AdminSessionSetupPanel({
   numPages,
   session,
   uploading,
+  markerGenerationAvailable,
+  generatingMarkers,
+  markerSuggestionSet,
   onAddMarker,
   onDeleteMarker,
+  onGenerateMarkers,
+  onApplyMarkerSuggestions,
+  onDiscardMarkerSuggestions,
   onOpenFilePicker,
   onSeekToMarker,
   onSetPlaybackMode,
@@ -81,6 +96,7 @@ export function AdminSessionSetupPanel({
   const { t } = useI18n();
   const [markerTitle, setMarkerTitle] = useState("");
   const [markerPage, setMarkerPage] = useState("");
+  const [draftSuggestions, setDraftSuggestions] = useState<MarkerSuggestion[]>([]);
   const [title, setTitle] = useState(session.title);
   const [description, setDescription] = useState(session.description ?? "");
   const [documentDescription, setDocumentDescription] = useState(
@@ -127,6 +143,10 @@ export function AdminSessionSetupPanel({
   useEffect(() => {
     setDocumentDescription(session.documentDescription ?? "");
   }, [session.documentDescription]);
+
+  useEffect(() => {
+    setDraftSuggestions(markerSuggestionSet?.suggestions ?? []);
+  }, [markerSuggestionSet]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -431,7 +451,166 @@ export function AdminSessionSetupPanel({
               <Badge variant="outline">{session.markers?.length ?? 0}</Badge>
             </div>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto] xl:grid-cols-1">
+            {session.pdfUrl && markerGenerationAvailable && (
+              <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {(session.markers?.length ?? 0) > 0
+                        ? t("control.aiMarkersUpdate")
+                        : t("control.aiMarkersCreate")}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {t("control.aiMarkersHint")}
+                    </p>
+                  </div>
+                  <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                    <Sparkles className="size-4" />
+                  </span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button
+                    variant="secondary"
+                    disabled={generatingMarkers}
+                    onClick={() => void onGenerateMarkers()}
+                  >
+                    {generatingMarkers ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                    {generatingMarkers
+                      ? t("control.aiMarkersGenerating")
+                      : markerSuggestionSet
+                        ? t("control.aiMarkersRefresh")
+                        : (session.markers?.length ?? 0) > 0
+                          ? t("control.aiMarkersUpdate")
+                          : t("control.aiMarkersCreate")}
+                  </Button>
+                  {markerSuggestionSet?.run && (
+                    <Badge variant="outline">
+                      {t("control.aiMarkersSummary", {
+                        count: markerSuggestionSet.summary.suggestionCount,
+                      })}
+                    </Badge>
+                  )}
+                </div>
+
+                {markerSuggestionSet && (
+                  <div className="mt-4 rounded-xl border border-border/70 bg-background/85 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">
+                        {t("control.aiMarkersSummary", {
+                          count: markerSuggestionSet.summary.suggestionCount,
+                        })}
+                      </Badge>
+                      <Badge variant="outline">
+                        {t("control.aiMarkersConfidence", {
+                          confidence: Math.round(
+                            markerSuggestionSet.summary.averageConfidence * 100
+                          ),
+                        })}
+                      </Badge>
+                      {markerSuggestionSet.summary.uncertainCount > 0 && (
+                        <Badge variant="outline" className="border-amber-300 text-amber-700">
+                          {t("control.aiMarkersUncertain", {
+                            count: markerSuggestionSet.summary.uncertainCount,
+                          })}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {markerSuggestionSet.error && (
+                      <p className="mt-3 text-sm font-medium text-destructive">
+                        {markerSuggestionSet.error}
+                      </p>
+                    )}
+
+                    {draftSuggestions.length > 0 ? (
+                      <div className="mt-3 flex flex-col gap-2">
+                        {draftSuggestions.map((suggestion) => (
+                          <div
+                            key={suggestion.id}
+                            className="rounded-lg border border-border/70 bg-card px-3 py-3"
+                          >
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                              <div className="min-w-0 flex-1">
+                                <Input
+                                  value={suggestion.title}
+                                  onChange={(event) =>
+                                    setDraftSuggestions((current) =>
+                                      current.map((item) =>
+                                        item.id === suggestion.id
+                                          ? { ...item, title: event.target.value }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div className="w-full lg:w-24 lg:shrink-0">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={Math.max(numPages, 1)}
+                                  inputMode="numeric"
+                                  value={String(suggestion.page)}
+                                  onChange={(event) =>
+                                    setDraftSuggestions((current) =>
+                                      current.map((item) =>
+                                        item.id === suggestion.id
+                                          ? { ...item, page: Number(event.target.value) || 1 }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                />
+                              </div>
+                              <Button
+                                variant="ghost"
+                                className="w-full justify-start lg:w-auto lg:shrink-0 lg:justify-center"
+                                onClick={() =>
+                                  setDraftSuggestions((current) =>
+                                    current.filter((item) => item.id !== suggestion.id)
+                                  )
+                                }
+                              >
+                                <Trash2 />
+                                {t("controls.deleteMarker")}
+                              </Button>
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              {t("control.aiMarkerReason", {
+                                confidence: Math.round(suggestion.confidence * 100),
+                                reason: suggestion.reason,
+                              })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : markerSuggestionSet.status === "ready" ? (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {t("control.aiMarkersEmpty")}
+                      </p>
+                    ) : null}
+
+                    {draftSuggestions.length > 0 && (
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <Button onClick={() => void onApplyMarkerSuggestions(draftSuggestions)}>
+                          <Sparkles />
+                          {t("control.aiMarkersApply")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void onDiscardMarkerSuggestions()}
+                        >
+                          {t("control.aiMarkersDiscard")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_7rem_auto]">
               <div className="flex flex-col gap-2">
                 <label htmlFor="markerTitle" className="text-sm font-medium text-foreground">
                   {t("controls.markerTitle")}
@@ -463,7 +642,13 @@ export function AdminSessionSetupPanel({
               </div>
               <Button
                 variant="outline"
-                disabled={numPages === 0 || !markerTitle.trim() || !markerPage}
+                className="lg:self-end"
+                disabled={
+                  numPages === 0 ||
+                  !markerTitle.trim() ||
+                  !markerPage ||
+                  (session.markers ?? []).some((marker) => marker.page === Number(markerPage))
+                }
                 onClick={() => {
                   onAddMarker(markerTitle, Number(markerPage));
                   setMarkerTitle("");

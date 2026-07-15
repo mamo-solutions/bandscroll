@@ -21,6 +21,7 @@ export class SqliteSessionStore implements SessionStoreAdapter {
   private readonly db: Database.Database;
   private readonly upsertStmt: Database.Statement;
   private readonly deleteStmt: Database.Statement;
+  private readonly clearStmt: Database.Statement;
 
   constructor(dataDir: string) {
     if (!existsSync(dataDir)) {
@@ -49,6 +50,7 @@ export class SqliteSessionStore implements SessionStoreAdapter {
          data = excluded.data`
     );
     this.deleteStmt = this.db.prepare(`DELETE FROM sessions WHERE id = ?`);
+    this.clearStmt = this.db.prepare(`DELETE FROM sessions`);
     this.load();
   }
 
@@ -104,6 +106,11 @@ export class SqliteSessionStore implements SessionStoreAdapter {
 
   values(): IterableIterator<SessionState> {
     return this.sessions.values();
+  }
+
+  clear(): void {
+    this.sessions.clear();
+    this.clearStmt.run();
   }
 
   /** Release the underlying database handle (used in tests). */

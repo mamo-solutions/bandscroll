@@ -1,20 +1,31 @@
 import type { AddressInfo } from "node:net";
 import { createServer, type Server as HttpServer } from "node:http";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import { io, type Socket } from "socket.io-client";
 import { createAppServer } from "./app.js";
+import { getAdminNotificationStore, resetAdminNotificationStoreForTests } from "./ai/adminNotificationStore.js";
+import { resetAiConnectorOverrides, setAiConnectorOverride } from "./ai/connectors.js";
 import { getAiConfigStore, resetAiConfigStoreForTests } from "./ai/aiConfigStore.js";
+import { resetMarkerSuggestionStoreForTests, getMarkerSuggestionStore } from "./ai/markerSuggestionStore.js";
+import { env } from "./env.js";
+import { clearSessionStore } from "./sessionStore.js";
 import { resetLoginRateLimitState } from "./security/loginRateLimit.js";
 import { resetAiConfigRateLimitState } from "./security/aiConfigRateLimit.js";
+import { resetMarkerGenerationRateLimitState } from "./security/markerGenerationRateLimit.js";
 import { getIo } from "./sockets/socketServer.js";
 
 let httpServer: HttpServer;
 let base: string;
 
 const PW = "test-password-123";
+
+function resetDirectory(dirPath: string): void {
+  rmSync(dirPath, { recursive: true, force: true });
+  mkdirSync(dirPath, { recursive: true });
+}
 
 function makePngBytes(): Uint8Array {
   const canvas = createCanvas(48, 48);
@@ -35,6 +46,42 @@ function makePdfBytes(): Uint8Array {
     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 240] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
     "<< /Length 43 >>\nstream\nBT /F1 24 Tf 48 120 Td (BandScroll) Tj ET\nendstream",
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(pdf, "utf8"));
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+
+  const xrefOffset = Buffer.byteLength(pdf, "utf8");
+  pdf += `xref
+0 ${objects.length + 1}
+0000000000 65535 f 
+`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${offset.toString().padStart(10, "0")} 00000 n 
+`;
+  });
+  pdf += `trailer
+<< /Size ${objects.length + 1} /Root 1 0 R >>
+startxref
+${xrefOffset}
+%%EOF`;
+
+  return new Uint8Array(Buffer.from(pdf, "utf8"));
+}
+
+function makeTwoPagePdfBytes(): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Count 2 /Kids [3 0 R 4 0 R] >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 240] /Resources << /Font << /F1 6 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 240] /Resources << /Font << /F1 6 0 R >> >> /Contents 7 0 R >>",
+    "<< /Length 43 >>\nstream\nBT /F1 24 Tf 48 120 Td (Cover Page) Tj ET\nendstream",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Length 46 >>\nstream\nBT /F1 24 Tf 48 120 Td (Amazing Grace) Tj ET\nendstream",
   ];
 
   let pdf = "%PDF-1.4\n";
@@ -98,13 +145,23 @@ afterAll(async () => {
   // underlying HTTP server (httpServer.close() alone would hang on open sockets).
   await new Promise<void>((resolve) => getIo().close(() => resolve()));
   resetAiConfigStoreForTests();
+  resetAdminNotificationStoreForTests();
+  resetMarkerSuggestionStoreForTests();
+  resetAiConnectorOverrides();
 });
 
 beforeEach(() => {
   resetLoginRateLimitState();
   resetAiConfigRateLimitState();
+  resetMarkerGenerationRateLimitState();
+  clearSessionStore();
   getAiConfigStore().clear();
+  getAdminNotificationStore().clear();
+  getMarkerSuggestionStore().clear();
+  resetAiConnectorOverrides();
   process.env.AI_CONFIG_ENCRYPTION_KEY = "test-ai-config-encryption-key";
+  resetDirectory(env.UPLOAD_DIR);
+  resetDirectory(env.SHARE_PREVIEW_DIR);
 });
 
 // ---- helpers ----
@@ -186,6 +243,26 @@ function waitForState(
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function waitForSuggestionSet(
+  cookie: string,
+  sessionId: string,
+  expectedStatus: "running" | "ready" | "error"
+): Promise<any> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const res = await fetch(`${base}/api/admin/sessions/${sessionId}/markers/suggestions`, {
+      headers: adminHeaders(cookie),
+    });
+    if (res.status === 200) {
+      const body = await json(res);
+      if (body.status === expectedStatus) {
+        return body;
+      }
+    }
+    await sleep(25);
+  }
+  throw new Error(`timeout waiting for marker suggestions status ${expectedStatus}`);
+}
 
 // ---- REST ----
 describe("REST API", () => {
@@ -398,6 +475,430 @@ describe("REST API", () => {
     });
     expect(res.status).toBe(200);
     expect((await json(res)).ok).toBe(true);
+  });
+
+  it("generates marker suggestions, persists them, and applies them", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "AI markers");
+
+    await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "sk-demo",
+        defaultModel: "gpt-4.1-mini",
+        capabilities: ["marker-generation"],
+        isDefault: true,
+      }),
+    });
+
+    setAiConnectorOverride("openai", {
+      supportsVision: true,
+      supportsJsonMode: true,
+      async validateCredential() {
+        return { ok: true, provider: "openai", latencyMs: 1, modelCount: 1 };
+      },
+      async invokeStructured(_config, request) {
+        if (request.input.includes("Classify the full document")) {
+          return {
+            ok: true,
+            provider: "openai",
+            model: request.model,
+            latencyMs: 1,
+            data: {
+              pages: [
+                {
+                  page: 1,
+                  classification: "front-matter",
+                  confidence: 0.95,
+                  reason: "Cover page",
+                },
+                {
+                  page: 1,
+                  classification: "song-start",
+                  title: "Amazing Grace",
+                  confidence: 0.93,
+                  reason: "New song title",
+                },
+              ],
+            },
+          };
+        }
+
+        return {
+          ok: true,
+          provider: "openai",
+          model: request.model,
+          latencyMs: 1,
+          data: {
+            suggestions: [
+              {
+                page: 1,
+                title: "Amazing Grace",
+                confidence: 0.93,
+                reason: "First page of the song",
+              },
+            ],
+          },
+        };
+      },
+    });
+
+    const form = new FormData();
+    form.append("pdf", new Blob([makePngBytes()], { type: "image/png" }), "score.png");
+    form.append("documentDescription", "Lead sheet image");
+    const uploadRes = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+      body: form,
+    });
+    expect(uploadRes.status).toBe(200);
+
+    const generateRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/generate`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+    });
+    expect(generateRes.status).toBe(202);
+    const runningSet = await json(generateRes);
+    expect(runningSet.status).toBe("running");
+
+    const suggestionSet = await waitForSuggestionSet(cookie, body.id, "ready");
+    expect(suggestionSet.suggestions).toHaveLength(1);
+    expect(suggestionSet.suggestions[0].title).toBe("Amazing Grace");
+
+    const notificationsRes = await fetch(`${base}/api/admin/notifications`, {
+      headers: adminHeaders(cookie),
+    });
+    expect(notificationsRes.status).toBe(200);
+    const notifications = await json(notificationsRes);
+    expect(notifications).toEqual([
+      expect.objectContaining({
+        sessionId: body.id,
+        status: "ready",
+        suggestionCount: 1,
+      }),
+    ]);
+
+    const persistedRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/suggestions`, {
+      headers: adminHeaders(cookie),
+    });
+    expect(persistedRes.status).toBe(200);
+
+    const applyRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/apply-suggestions`, {
+      method: "POST",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        suggestions: [
+          {
+            ...suggestionSet.suggestions[0],
+            title: "Amazing Grace (Edited)",
+          },
+        ],
+      }),
+    });
+    expect(applyRes.status).toBe(200);
+    const updated = await json(applyRes);
+    expect(updated.markers).toEqual([
+      expect.objectContaining({ title: "Amazing Grace (Edited)", page: 1 }),
+    ]);
+
+    const missingRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/suggestions`, {
+      headers: adminHeaders(cookie),
+    });
+    expect(missingRes.status).toBe(404);
+  });
+
+  it("rejects marker generation when no uploaded document exists", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "No document");
+
+    await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "sk-demo",
+        capabilities: ["marker-generation"],
+        isDefault: true,
+      }),
+    });
+
+    const res = await fetch(`${base}/api/admin/sessions/${body.id}/markers/generate`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+    });
+    expect(res.status).toBe(400);
+    expect((await json(res)).error).toBe("document-required");
+  });
+
+  it("invalidates pending marker suggestions when a new document is uploaded", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Invalidate suggestions");
+
+    await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "sk-demo",
+        capabilities: ["marker-generation"],
+        isDefault: true,
+      }),
+    });
+
+    setAiConnectorOverride("openai", {
+      supportsVision: true,
+      supportsJsonMode: true,
+      async validateCredential() {
+        return { ok: true, provider: "openai", latencyMs: 1, modelCount: 1 };
+      },
+      async invokeStructured(_config, request) {
+        if (request.input.includes("Classify the full document")) {
+          return {
+            ok: true,
+            provider: "openai",
+            model: request.model,
+            latencyMs: 1,
+            data: {
+              pages: [{ page: 1, classification: "song-start", title: "Song", confidence: 0.9, reason: "Title" }],
+            },
+          };
+        }
+        return {
+          ok: true,
+          provider: "openai",
+          model: request.model,
+          latencyMs: 1,
+          data: { suggestions: [{ page: 1, title: "Song", confidence: 0.9, reason: "Title" }] },
+        };
+      },
+    });
+
+    for (const name of ["first.png", "second.png"]) {
+      const form = new FormData();
+      form.append("pdf", new Blob([makePngBytes()], { type: "image/png" }), name);
+      form.append("documentDescription", "Lead sheet image");
+      const uploadRes = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+        method: "POST",
+        headers: adminHeaders(cookie),
+        body: form,
+      });
+      expect(uploadRes.status).toBe(200);
+      if (name === "first.png") {
+        const generateRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/generate`, {
+          method: "POST",
+          headers: adminHeaders(cookie),
+        });
+        expect(generateRes.status).toBe(202);
+        await waitForSuggestionSet(cookie, body.id, "ready");
+      }
+    }
+
+    const res = await fetch(`${base}/api/admin/sessions/${body.id}/markers/suggestions`, {
+      headers: adminHeaders(cookie),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("retries marker classification page by page when the batch response is empty", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "AI markers retry");
+
+    await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "sk-demo",
+        defaultModel: "gpt-4.1",
+        capabilities: ["marker-generation"],
+        isDefault: true,
+      }),
+    });
+
+    let batchCalls = 0;
+    let singlePageCalls = 0;
+    setAiConnectorOverride("openai", {
+      supportsVision: true,
+      supportsJsonMode: true,
+      async validateCredential() {
+        return { ok: true, provider: "openai", latencyMs: 1, modelCount: 1 };
+      },
+      async invokeStructured(_config, request) {
+        if (request.input.includes("Classify the full document")) {
+          batchCalls += 1;
+          return {
+            ok: true,
+            provider: "openai",
+            model: request.model,
+            latencyMs: 1,
+            data: { pages: [] },
+          };
+        }
+
+        if (request.input.includes("Classify page 1 of 2")) {
+          singlePageCalls += 1;
+          return {
+            ok: true,
+            provider: "openai",
+            model: request.model,
+            latencyMs: 1,
+            data: {
+              page: {
+                page: 1,
+                classification: "front-matter",
+                confidence: 0.92,
+                reason: "Cover page",
+              },
+            },
+          };
+        }
+
+        if (request.input.includes("Classify page 2 of 2")) {
+          singlePageCalls += 1;
+          return {
+            ok: true,
+            provider: "openai",
+            model: request.model,
+            latencyMs: 1,
+            data: {
+              page: {
+                page: 2,
+                classification: "song-start",
+                title: "Amazing Grace",
+                confidence: 0.94,
+                reason: "Large centered title on a new song page",
+              },
+            },
+          };
+        }
+
+        return {
+          ok: true,
+          provider: "openai",
+          model: request.model,
+          latencyMs: 1,
+          data: {
+            suggestions: [
+              {
+                page: 2,
+                title: "Amazing Grace",
+                confidence: 0.94,
+                reason: "First page of the song",
+              },
+            ],
+          },
+        };
+      },
+    });
+
+    const form = new FormData();
+    form.append("pdf", new Blob([makeTwoPagePdfBytes()], { type: "application/pdf" }), "score.pdf");
+    const uploadRes = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+      body: form,
+    });
+    expect(uploadRes.status).toBe(200);
+
+    const generateRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/generate`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+    });
+    expect(generateRes.status).toBe(202);
+    const suggestionSet = await waitForSuggestionSet(cookie, body.id, "ready");
+    expect(batchCalls).toBe(1);
+    expect(singlePageCalls).toBe(2);
+    expect(suggestionSet.suggestions).toEqual([
+      expect.objectContaining({
+        title: "Amazing Grace",
+        page: 2,
+      }),
+    ]);
+  });
+
+  it("acknowledges unread marker-generation notifications", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "AI notifications");
+
+    await fetch(`${base}/api/admin/ai/config/openai`, {
+      method: "PUT",
+      headers: adminHeaders(cookie, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        apiKey: "sk-demo",
+        capabilities: ["marker-generation"],
+        isDefault: true,
+      }),
+    });
+
+    setAiConnectorOverride("openai", {
+      supportsVision: true,
+      supportsJsonMode: true,
+      async validateCredential() {
+        return { ok: true, provider: "openai", latencyMs: 1, modelCount: 1 };
+      },
+      async invokeStructured(_config, request) {
+        if (request.input.includes("Classify the full document")) {
+          return {
+            ok: true,
+            provider: "openai",
+            model: request.model,
+            latencyMs: 1,
+            data: {
+              pages: [
+                {
+                  page: 1,
+                  classification: "song-start",
+                  title: "Song",
+                  confidence: 0.9,
+                  reason: "Title",
+                },
+              ],
+            },
+          };
+        }
+        return {
+          ok: true,
+          provider: "openai",
+          model: request.model,
+          latencyMs: 1,
+          data: { suggestions: [{ page: 1, title: "Song", confidence: 0.9, reason: "Title" }] },
+        };
+      },
+    });
+
+    const form = new FormData();
+    form.append("pdf", new Blob([makePngBytes()], { type: "image/png" }), "score.png");
+    form.append("documentDescription", "Lead sheet image");
+    const uploadRes = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+      body: form,
+    });
+    expect(uploadRes.status).toBe(200);
+
+    const generateRes = await fetch(`${base}/api/admin/sessions/${body.id}/markers/generate`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+    });
+    expect(generateRes.status).toBe(202);
+    await waitForSuggestionSet(cookie, body.id, "ready");
+
+    const notificationsRes = await fetch(`${base}/api/admin/notifications`, {
+      headers: adminHeaders(cookie),
+    });
+    const notifications = await json(notificationsRes);
+    expect(notifications).toHaveLength(1);
+
+    const ackRes = await fetch(`${base}/api/admin/notifications/${notifications[0].id}/ack`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+    });
+    expect(ackRes.status).toBe(200);
+    expect((await json(ackRes)).ok).toBe(true);
+
+    const afterAckRes = await fetch(`${base}/api/admin/notifications`, {
+      headers: adminHeaders(cookie),
+    });
+    expect(afterAckRes.status).toBe(200);
+    expect(await json(afterAckRes)).toEqual([]);
   });
 
   it("accepts a valid Referer when Origin is absent on an admin mutation", async () => {

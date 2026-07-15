@@ -14,6 +14,7 @@ import {
 } from "../security/loginRateLimit.js";
 import { requireTrustedAdminOrigin } from "../security/origin.js";
 import { requireAiTestAttemptAllowed } from "../security/aiConfigRateLimit.js";
+import { requireMarkerGenerationAttemptAllowed } from "../security/markerGenerationRateLimit.js";
 import { validateUploadFile } from "../uploads/validate.js";
 import {
   createSession,
@@ -36,15 +37,19 @@ import {
   removeSessionSharePreview,
 } from "../lib/sharePreview.js";
 import {
+  acknowledgeAdminNotification,
   AiConfigError,
   deleteAiProviderConfig,
   getAiConfigSummary,
+  listAdminNotifications,
   listAiProviders,
+  MarkerGenerationService,
   saveAiProviderConfig,
   testAiProviderConfig,
 } from "../ai/service.js";
 
 export const adminRouter = Router();
+const markerGenerationService = new MarkerGenerationService();
 
 // ---- Upload setup (admin only; PDF or image; random safe filename) ----
 if (!existsSync(env.UPLOAD_DIR)) {
@@ -207,6 +212,94 @@ adminRouter.delete("/ai/config/:provider", (req, res) => {
   }
 });
 
+adminRouter.get("/notifications", (_req, res) => {
+  res.json(listAdminNotifications());
+});
+
+adminRouter.post("/notifications/:id/ack", (req, res) => {
+  const acknowledged = acknowledgeAdminNotification(req.params.id);
+  if (!acknowledged) {
+    res.status(404).json({ error: "notification-not-found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+adminRouter.get("/sessions/:id/markers/suggestions", (req, res) => {
+  const session = getSessionById(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: "session-not-found" });
+    return;
+  }
+
+  const suggestions = markerGenerationService.getSuggestions(session.id);
+  if (!suggestions) {
+    res.status(404).json({ error: "suggestions-not-found" });
+    return;
+  }
+
+  if (suggestions.pdfUrl !== session.pdfUrl) {
+    markerGenerationService.invalidateSuggestionsForSession(session.id);
+    res.status(404).json({ error: "suggestions-not-found" });
+    return;
+  }
+
+  res.json(suggestions);
+});
+
+adminRouter.post(
+  "/sessions/:id/markers/generate",
+  requireMarkerGenerationAttemptAllowed,
+  (req, res) => {
+    const session = getSessionById(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: "session-not-found" });
+      return;
+    }
+
+    try {
+      const suggestions = markerGenerationService.startGeneration(session);
+      res.status(202).json(suggestions);
+    } catch (err) {
+      handleAiConfigError(err, res);
+    }
+  }
+);
+
+adminRouter.post("/sessions/:id/markers/apply-suggestions", (req, res) => {
+  const session = getSessionById(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: "session-not-found" });
+    return;
+  }
+
+  try {
+    const updated = markerGenerationService.applySuggestions(
+      session,
+      Array.isArray(req.body?.suggestions) ? req.body.suggestions : undefined
+    );
+    broadcastSessionState(updated);
+    res.json(updated);
+  } catch (err) {
+    handleAiConfigError(err, res);
+  }
+});
+
+adminRouter.delete("/sessions/:id/markers/suggestions", (req, res) => {
+  const session = getSessionById(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: "session-not-found" });
+    return;
+  }
+
+  const cleared = markerGenerationService.clearSuggestions(session.id);
+  if (!cleared) {
+    res.status(404).json({ error: "suggestions-not-found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 adminRouter.post("/sessions", (req, res) => {
   const title = String(req.body?.title ?? "").trim();
   if (!title) {
@@ -236,6 +329,12 @@ function handleAiConfigError(err: unknown, res: Response): void {
     "invalid-base-url": 400,
     "invalid-capabilities": 400,
     "config-not-found": 404,
+    "marker-generation-disabled": 400,
+    "marker-generation-unavailable": 502,
+    "marker-generation-in-progress": 409,
+    "document-required": 400,
+    "document-description-required": 400,
+    "suggestions-not-found": 404,
   };
 
   res.status(statusByCode[err.code]).json({ error: err.code, message: err.message });
@@ -336,6 +435,9 @@ adminRouter.post(
     }
     const updated = updateSessionState(session.id, patch);
     if (updated) {
+      if (oldPdfUrl && oldPdfUrl !== pdfUrl) {
+        markerGenerationService.invalidateSuggestionsForSession(session.id);
+      }
       await refreshSessionSharePreview(updated);
       broadcastSessionState(updated);
       broadcastSessionListUpdated();

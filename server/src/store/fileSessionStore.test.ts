@@ -85,6 +85,18 @@ describe("FileSessionStore", () => {
     expect(store.delete("missing")).toBe(false);
   });
 
+  it("clears all persisted sessions", () => {
+    const store = new FileSessionStore(dataDir);
+    store.set("a", makeSession({ id: "a" }));
+    store.set("b", makeSession({ id: "b" }));
+
+    store.clear();
+    expect([...store.values()]).toHaveLength(0);
+
+    const reloaded = new FileSessionStore(dataDir);
+    expect([...reloaded.values()]).toHaveLength(0);
+  });
+
   it("starts empty when the data directory is fresh", () => {
     const store = new FileSessionStore(dataDir);
     expect([...store.values()]).toHaveLength(0);

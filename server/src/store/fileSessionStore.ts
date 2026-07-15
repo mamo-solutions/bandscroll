@@ -94,4 +94,9 @@ export class FileSessionStore implements SessionStoreAdapter {
   values(): IterableIterator<SessionState> {
     return this.sessions.values();
   }
+
+  clear(): void {
+    this.sessions.clear();
+    this.save();
+  }
 }

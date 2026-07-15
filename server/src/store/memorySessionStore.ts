@@ -21,4 +21,8 @@ export class MemorySessionStore implements SessionStoreAdapter {
   values(): IterableIterator<SessionState> {
     return this.sessions.values();
   }
+
+  clear(): void {
+    this.sessions.clear();
+  }
 }

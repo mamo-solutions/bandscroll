@@ -58,6 +58,12 @@ import {
 } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
+import type {
+  AiConfigResponse,
+  MarkerGenerationSocketEvent,
+  MarkerSuggestion,
+  MarkerSuggestionSet,
+} from "@/types/ai";
 import {
   clamp01,
   type PlaybackMode,
@@ -79,6 +85,9 @@ export function AdminSessionControl() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingSessionDetails, setSavingSessionDetails] = useState(false);
   const [savingDocumentDescription, setSavingDocumentDescription] = useState(false);
+  const [markerGenerationAvailable, setMarkerGenerationAvailable] = useState(false);
+  const [markerSuggestionSet, setMarkerSuggestionSet] = useState<MarkerSuggestionSet | null>(null);
+  const [generatingMarkers, setGeneratingMarkers] = useState(false);
   const [scrollMetrics, setScrollMetrics] = useState<PdfViewerScrollMetrics | null>(null);
   const [shortcutBindings, setShortcutBindings] = useState<AdminShortcutBindings>(() =>
     loadShortcutBindings()
@@ -96,6 +105,7 @@ export function AdminSessionControl() {
   // Set true when scroll-mode auto-stop has fired; suppresses further advance
   // until the authoritative paused state arrives back via session-state.
   const autoStopEngagedRef = useRef(false);
+  const autoStopTargetsRef = useRef(new Map<string, number>());
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SCREENS_STEP = 0.5;
@@ -182,6 +192,7 @@ export function AdminSessionControl() {
         )
       );
     });
+    void loadAiMarkerState();
 
     const onState = (nextSession: SessionState) => {
       if (nextSession.id !== id) return;
@@ -210,15 +221,45 @@ export function AdminSessionControl() {
       }
     };
     const onError = (e: { error: string }) => reportError("admin.socket", e?.error);
+    const onMarkerGenerationUpdated = (payload: MarkerGenerationSocketEvent) => {
+      if (payload.sessionId !== id) return;
+      setGeneratingMarkers(false);
+      void loadAiMarkerState();
+    };
 
     socket.on("session-state", onState);
     socket.on("admin-error", onError);
+    socket.on("admin-marker-generation-updated", onMarkerGenerationUpdated);
 
     return () => {
       socket.off("session-state", onState);
       socket.off("admin-error", onError);
+      socket.off("admin-marker-generation-updated", onMarkerGenerationUpdated);
     };
   }, [id, socket, syncUiProgress]);
+
+  async function loadAiMarkerState() {
+    try {
+      const config = await api.aiConfig();
+      setMarkerGenerationAvailable(hasMarkerGenerationCapability(config));
+    } catch {
+      setMarkerGenerationAvailable(false);
+    }
+
+    try {
+      const suggestions = await api.markerSuggestions(id);
+      setMarkerSuggestionSet(suggestions);
+      setGeneratingMarkers(suggestions.status === "running");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        setMarkerSuggestionSet(null);
+        setGeneratingMarkers(false);
+        return;
+      }
+      setMarkerSuggestionSet(null);
+      setGeneratingMarkers(false);
+    }
+  }
 
   useEffect(() => {
     if (socketStatus.state === "connected") {
@@ -439,12 +480,15 @@ export function AdminSessionControl() {
     setSpeed(screensPerMinuteToSpeed(nextScreensPerMinute, metrics.scrollableScreens));
   }
 
-  function play() {
+  async function play() {
     const currentSession = stateRef.current;
     if (!currentSession) return;
 
     // Resuming re-arms auto-stop; the boundary just left is now behind us.
     autoStopEngagedRef.current = false;
+    autoStopTargetsRef.current = await getAutoStopTargets(currentSession);
+
+    if (stateRef.current !== currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
       socket.emit("admin-seek", { sessionId: id, progress: liveProgressRef.current });
@@ -454,6 +498,34 @@ export function AdminSessionControl() {
 
     patchSession({ playing: true, status: "live" });
     socket.emit("admin-play", id);
+  }
+
+  async function getAutoStopTargets(currentSession: SessionState): Promise<Map<string, number>> {
+    const targets = new Map<string, number>();
+    const viewer = viewerRef.current;
+    if (!viewer || currentSession.playbackMode !== "scroll" || !currentSession.autoStopAtSongEnd) {
+      return targets;
+    }
+
+    const metrics = viewer.getScrollMetrics();
+    const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
+    await Promise.all(
+      markers.slice(1).map(async (marker, index) => {
+        const previousMarker = markers[index];
+        if (marker.page <= previousMarker.page) return;
+        const textProgress = await viewer.getSongEndProgress(previousMarker.page, marker.page, 0.15);
+        const pageTopProgress = viewer.getProgressForPage(marker.page);
+        const fallbackProgress =
+          metrics && metrics.maxScrollPx > 0
+            ? clamp01(
+                (pageTopProgress * metrics.maxScrollPx - metrics.viewportHeightPx) /
+                  metrics.maxScrollPx
+              )
+            : pageTopProgress;
+        if (fallbackProgress > 0) targets.set(marker.id, textProgress ?? fallbackProgress);
+      })
+    );
+    return targets;
   }
 
   function pause() {
@@ -605,10 +677,10 @@ export function AdminSessionControl() {
   }
 
   /** Scroll-mode auto-stop: halt playback the moment this frame's advance
-   *  crosses a song boundary, via the normal authoritative pause. The stop
-   *  lands one viewport-height *before* the next song's page top, so the boundary
-   *  sits at the bottom of the screen and the finishing song's last page stays
-   *  visible (rather than scrolling the next song fully into view). Detection is
+   *  crosses a song boundary, via the normal authoritative pause. Text-aware
+   *  targets place the finishing song's final text at 85% of the conductor's
+   *  viewport; scanned content falls back to the existing page-boundary target.
+   *  Detection is
    *  a crossing test against the previous frame's progress — NOT `getCurrentPage()`,
    *  whose nearest-page rounding flips a boundary early and would skip it. A
    *  manual seek moves progress outside this loop, so it never spans a boundary
@@ -620,22 +692,12 @@ export function AdminSessionControl() {
     if (!viewer) return;
     const newProgress = liveProgressRef.current;
     if (newProgress <= prevProgress) return;
-    const metrics = viewer.getScrollMetrics();
     const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
-    for (const marker of markers) {
-      const pageTopProgress =
-        viewer.getProgressForPage(marker.page) ??
-        clamp01((marker.page - 1) / Math.max(numPagesRef.current, 1));
-      if (pageTopProgress <= 0) continue; // a song at the document start is never a stop
-      // Back off one viewport so the next song's page rests just below the fold.
-      const stopProgress =
-        metrics && metrics.maxScrollPx > 0
-          ? clamp01(
-              (pageTopProgress * metrics.maxScrollPx - metrics.viewportHeightPx) /
-                metrics.maxScrollPx
-            )
-          : pageTopProgress;
-      if (stopProgress <= 0) continue; // boundary within a viewport of the start
+    for (let index = 1; index < markers.length; index += 1) {
+      const marker = markers[index];
+      if (marker.page <= markers[index - 1].page) continue;
+      const stopProgress = autoStopTargetsRef.current.get(marker.id);
+      if (stopProgress === undefined) continue;
       if (prevProgress < stopProgress && stopProgress <= newProgress) {
         liveProgressRef.current = stopProgress;
         autoStopEngagedRef.current = true;
@@ -650,7 +712,15 @@ export function AdminSessionControl() {
   }
 
   function addMarker(title: string, page: number) {
-    if (!session || !title.trim() || page < 1 || page > numPages) return;
+    if (
+      !session ||
+      !title.trim() ||
+      page < 1 ||
+      page > numPages ||
+      (session.markers ?? []).some((marker) => marker.page === page)
+    ) {
+      return;
+    }
     const marker: SongMarker = {
       id: crypto.randomUUID(),
       title: title.trim(),
@@ -738,6 +808,7 @@ export function AdminSessionControl() {
           numPagesRef.current
         )
       );
+      setMarkerSuggestionSet(null);
       setAnnouncement(t("control.uploadCompleteAnnouncement"));
     } catch (error) {
       if (error instanceof ApiError && error.message === "document-description-required") {
@@ -781,6 +852,56 @@ export function AdminSessionControl() {
       setErrorMessage(t("control.documentDescriptionSaveFailed"));
     } finally {
       setSavingDocumentDescription(false);
+    }
+  }
+
+  async function generateMarkers() {
+    setGeneratingMarkers(true);
+    setErrorMessage(null);
+    try {
+      const next = await api.generateMarkers(id);
+      setMarkerSuggestionSet(next);
+      setGeneratingMarkers(next.status === "running");
+      setAnnouncement(t("control.aiMarkersStarted"));
+    } catch (error) {
+      setGeneratingMarkers(false);
+      if (error instanceof ApiError) {
+        setErrorMessage(error.detailMessage || t("control.aiMarkersFailed"));
+      } else {
+        setErrorMessage(t("control.aiMarkersFailed"));
+      }
+    }
+  }
+
+  async function applyMarkerSuggestions(suggestions: MarkerSuggestion[]) {
+    setErrorMessage(null);
+    try {
+      const updated = await api.applyMarkerSuggestions(id, suggestions);
+      stateRef.current = updated;
+      setSession(updated);
+      setMarkerSuggestionSet(null);
+      setAnnouncement(t("control.aiMarkersApplied"));
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorMessage(error.detailMessage || t("control.aiMarkersApplyFailed"));
+      } else {
+        setErrorMessage(t("control.aiMarkersApplyFailed"));
+      }
+    }
+  }
+
+  async function discardMarkerSuggestions() {
+    setErrorMessage(null);
+    try {
+      await api.deleteMarkerSuggestions(id);
+      setMarkerSuggestionSet(null);
+      setAnnouncement(t("control.aiMarkersDiscarded"));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        setMarkerSuggestionSet(null);
+        return;
+      }
+      setErrorMessage(t("control.aiMarkersDiscardFailed"));
     }
   }
 
@@ -1069,8 +1190,14 @@ export function AdminSessionControl() {
               numPages={numPages}
               session={session}
               uploading={uploading}
+              markerGenerationAvailable={markerGenerationAvailable}
+              generatingMarkers={generatingMarkers}
+              markerSuggestionSet={markerSuggestionSet}
               onAddMarker={addMarker}
               onDeleteMarker={deleteMarker}
+              onGenerateMarkers={generateMarkers}
+              onApplyMarkerSuggestions={applyMarkerSuggestions}
+              onDiscardMarkerSuggestions={discardMarkerSuggestions}
               onOpenFilePicker={() => pdfInput.current?.click()}
               onSeekToMarker={seekToMarker}
               onSetPlaybackMode={setPlaybackMode}
@@ -1112,4 +1239,10 @@ export function AdminSessionControl() {
       )}
     </main>
   );
+}
+
+function hasMarkerGenerationCapability(config: AiConfigResponse): boolean {
+  if (!config.activeProvider) return false;
+  const active = config.configs.find((item) => item.provider === config.activeProvider);
+  return Boolean(active?.capabilities.includes("marker-generation"));
 }

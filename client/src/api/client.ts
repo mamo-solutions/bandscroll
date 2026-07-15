@@ -5,6 +5,10 @@ import type {
   AiProvider,
   AiProviderDefinition,
   AiProviderConfigSummary,
+  AdminNotification,
+  MarkerGenerationSocketEvent,
+  MarkerSuggestion,
+  MarkerSuggestionSet,
 } from "../types/ai";
 
 // Same-origin requests; credentials:include carries the admin session cookie.
@@ -129,4 +133,27 @@ export const api = {
     request<{ ok: boolean }>(`/api/admin/ai/config/${provider}`, {
       method: "DELETE",
     }),
+  markerSuggestions: (id: string) =>
+    request<MarkerSuggestionSet>(`/api/admin/sessions/${id}/markers/suggestions`),
+  generateMarkers: (id: string) =>
+    request<MarkerSuggestionSet>(`/api/admin/sessions/${id}/markers/generate`, {
+      method: "POST",
+    }),
+  adminNotifications: () =>
+    request<AdminNotification[]>("/api/admin/notifications"),
+  ackAdminNotification: (id: string) =>
+    request<{ ok: boolean }>(`/api/admin/notifications/${id}/ack`, {
+      method: "POST",
+    }),
+  applyMarkerSuggestions: (id: string, suggestions: MarkerSuggestion[]) =>
+    request<SessionState>(`/api/admin/sessions/${id}/markers/apply-suggestions`, {
+      method: "POST",
+      body: JSON.stringify({ suggestions }),
+    }),
+  deleteMarkerSuggestions: (id: string) =>
+    request<{ ok: boolean }>(`/api/admin/sessions/${id}/markers/suggestions`, {
+      method: "DELETE",
+    }),
 };
+
+export type { MarkerGenerationSocketEvent };
