@@ -20,12 +20,6 @@ import {
   scrollTopToAnchor,
   getVisiblePageRange,
 } from "./pdfViewerLayout";
-import {
-  getDarkPixelBottomFraction,
-  getSongEndProgress,
-  getTextBottomInPagePx,
-  type PdfViewportLike,
-} from "./pdfTextBounds";
 
 // Errors-only verbosity: silences harmless "TT: undefined function" font
 // warnings from PDF.js. Module-level constant so react-pdf doesn't reload.
@@ -48,7 +42,6 @@ const PAGE_DPR =
 const OVERSCAN = 2;
 const PAGE_GAP = 12; // matches the flex `gap-3` between page wrappers
 const PAGE_TOP = 12; // matches `pt-3` top padding
-const VISUAL_ANALYSIS_WIDTH = 320;
 
 export type PdfViewerHandle = {
   scrollToProgress: (progress: number) => void;
@@ -58,45 +51,29 @@ export type PdfViewerHandle = {
   getCurrentProgress: () => number;
   getScrollMetrics: () => PdfViewerScrollMetrics | null;
   getScrollAnchor: () => ScrollAnchor | null;
-  getScrollAnchorForPage: (page: number, topPaddingPx: number) => ScrollAnchor | null;
   getProgressForAnchor: (anchor: ScrollAnchor) => number | null;
   scrollToAnchor: (anchor: ScrollAnchor) => void;
-  getSongEndProgress: (
-    startPage: number,
-    nextMarkerPage: number,
-    bottomBufferFraction: number
-  ) => Promise<number | null>;
+  findMarkerPage: (title: string, minimumPage?: number, maximumPage?: number) => Promise<number | null>;
   readonly numPages: number;
-};
-
-type PdfTextContentLike = {
-  items: Array<{
-    str: string;
-    transform: number[];
-    width: number;
-    height: number;
-  }>;
-};
-
-type PdfTextPageLike = {
-  getViewport: (params: { scale: number }) => PdfViewportLike & { width: number };
-  getTextContent: () => Promise<PdfTextContentLike>;
-  render: (params: {
-    canvasContext: CanvasRenderingContext2D;
-    viewport: PdfViewportLike & { width: number };
-    canvas: HTMLCanvasElement;
-  }) => { promise: Promise<void> };
-};
-
-type PdfTextDocumentLike = {
-  numPages: number;
-  getPage: (pageNumber: number) => Promise<PdfTextPageLike>;
 };
 
 export type PdfViewerScrollMetrics = {
   viewportHeightPx: number;
   maxScrollPx: number;
   scrollableScreens: number;
+};
+
+type PdfTextContentLike = {
+  items: Array<{ str: string }>;
+};
+
+type PdfTextPageLike = {
+  getTextContent: () => Promise<PdfTextContentLike>;
+};
+
+type PdfTextDocumentLike = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfTextPageLike>;
 };
 
 type Props = {
@@ -158,8 +135,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const pageHeightObserverRef = useRef<ResizeObserver | null>(null);
   const observedPageElementsRef = useRef<(HTMLDivElement | null)[]>([]);
   const pdfDocumentRef = useRef<PdfTextDocumentLike | null>(null);
-  const pageTextBottomFractionPromisesRef = useRef(new Map<number, Promise<number | null>>());
-  const pageVisualBottomFractionPromisesRef = useRef(new Map<number, Promise<number | null>>());
+  const pageTextPromisesRef = useRef(new Map<number, Promise<string>>());
   const { t } = useI18n();
 
   const isImage = IMAGE_RE.test(fileUrl);
@@ -167,6 +143,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const clampedVisiblePage = clampPage(visiblePage ?? 1, numPages);
   const useBlackCanvasChrome = backgroundMode === "black" && singlePageMode;
   const chromeFlush = edgeToEdge || flush;
+  const pageGapPx = chromeFlush ? 0 : PAGE_GAP;
+  const pageTopPx = chromeFlush ? 0 : PAGE_TOP;
 
   // Reset everything whenever the file changes (initial load or swap).
   useEffect(() => {
@@ -181,8 +159,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     observedPageElementsRef.current = [];
     readyRef.current = false;
     pdfDocumentRef.current = null;
-    pageTextBottomFractionPromisesRef.current.clear();
-    pageVisualBottomFractionPromisesRef.current.clear();
+    pageTextPromisesRef.current.clear();
   }, [fileUrl]);
 
   // Ready = safe to drive programmatic scrolling. Avoids scrolling before the
@@ -193,7 +170,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   const predictedPageHeights = getReservedPageHeights(displayWidth, pageAspects);
   const effectivePageHeights = getEffectivePageHeights(predictedPageHeights, measuredPageHeights);
-  const pageTopOffsets = getPageTopOffsets(effectivePageHeights, PAGE_TOP, PAGE_GAP);
+  const pageTopOffsets = getPageTopOffsets(effectivePageHeights, pageTopPx, pageGapPx);
   const currentPageAspect = pageAspects[clampedVisiblePage - 1] ?? pageAspects[0] ?? null;
   const singlePageWidth = getSinglePageWidth(
     displayWidth,
@@ -319,120 +296,31 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return scrollTopToAnchor(el.scrollTop, pageTopOffsets, effectivePageHeights);
   };
 
-  const getScrollAnchorForPage = (page: number, topPaddingPx: number): ScrollAnchor | null => {
-    if (!hasScrollGeometry()) return null;
-    const pageTop = pageRefs.current[page - 1]?.offsetTop ?? pageTopOffsets[page - 1];
-    if (pageTop === undefined) return null;
-    return scrollTopToAnchor(
-      Math.max(0, pageTop - Math.max(0, topPaddingPx)),
-      pageTopOffsets,
-      effectivePageHeights
-    );
-  };
-
   const getProgressForAnchor = (anchor: ScrollAnchor): number | null => {
     if (!hasScrollGeometry()) return null;
     const scrollTop = anchorToScrollTop(anchor, pageTopOffsets, effectivePageHeights, maxScroll());
     return scrollTop === null ? null : clamp01(scrollTop / maxScroll());
   };
 
-  const getPageTextBottomFraction = useCallback(
-    (pageNumber: number): Promise<number | null> => {
-      const existing = pageTextBottomFractionPromisesRef.current.get(pageNumber);
-      if (existing) return existing;
+  const findMarkerPage = useCallback(
+    async (title: string, minimumPage = 1, maximumPage?: number): Promise<number | null> => {
       const pdf = pdfDocumentRef.current;
-      if (!pdf) return Promise.resolve(null);
+      const normalizedTitle = normalizeMarkerText(title);
+      if (!pdf || !normalizedTitle) return null;
 
-      const promise = pdf
-        .getPage(pageNumber)
-        .then(async (page) => {
-          const [textContent, viewport] = await Promise.all([
-            page.getTextContent(),
-            Promise.resolve(page.getViewport({ scale: 1 })),
-          ]);
-          const textBottom = getTextBottomInPagePx(textContent.items, viewport, viewport.height);
-          return textBottom === null ? null : textBottom / viewport.height;
-        })
-        .catch(() => null);
-      pageTextBottomFractionPromisesRef.current.set(pageNumber, promise);
-      return promise;
-    },
-    []
-  );
-
-  const getPageVisualBottomFraction = useCallback(
-    (pageNumber: number): Promise<number | null> => {
-      const existing = pageVisualBottomFractionPromisesRef.current.get(pageNumber);
-      if (existing) return existing;
-      const pdf = pdfDocumentRef.current;
-      if (!pdf || typeof document === "undefined") return Promise.resolve(null);
-
-      const promise = pdf
-        .getPage(pageNumber)
-        .then(async (page) => {
-          const unscaledViewport = page.getViewport({ scale: 1 });
-          const viewport = page.getViewport({
-            scale: VISUAL_ANALYSIS_WIDTH / Math.max(1, unscaledViewport.width),
-          });
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.ceil(viewport.width));
-          canvas.height = Math.max(1, Math.ceil(viewport.height));
-          const context = canvas.getContext("2d", { willReadFrequently: true });
-          if (!context) return null;
-          await page.render({ canvasContext: context, viewport, canvas }).promise;
-          return getDarkPixelBottomFraction(
-            context.getImageData(0, 0, canvas.width, canvas.height).data,
-            canvas.width,
-            canvas.height
-          );
-        })
-        .catch(() => null);
-      pageVisualBottomFractionPromisesRef.current.set(pageNumber, promise);
-      return promise;
-    },
-    []
-  );
-
-  const getSongEndProgressForRange = useCallback(
-    async (startPage: number, nextMarkerPage: number, bottomBufferFraction: number) => {
-      const pdf = pdfDocumentRef.current;
-      const metrics = getScrollMetrics();
-      if (!pdf || !metrics || singlePageMode || nextMarkerPage <= startPage) return null;
-
-      const firstPage = clampPage(startPage, numPages);
-      const finalPage = clampPage(nextMarkerPage - 1, numPages);
-      let finalTextBottom: { page: number; bottomPx: number } | null = null;
-
-      for (let pageNumber = firstPage; pageNumber <= finalPage; pageNumber += 1) {
-        const textBottomFraction = await getPageTextBottomFraction(pageNumber);
-        const contentBottomFraction =
-          textBottomFraction ?? (await getPageVisualBottomFraction(pageNumber));
-        const pageHeight = effectivePageHeights[pageNumber - 1];
-        if (contentBottomFraction !== null && pageHeight !== undefined) {
-          finalTextBottom = { page: pageNumber, bottomPx: contentBottomFraction * pageHeight };
-        }
+      const startPage = Math.max(1, Math.min(pdf.numPages, Math.round(minimumPage)));
+      const endPage = Math.max(startPage, Math.min(pdf.numPages, Math.round(maximumPage ?? pdf.numPages)));
+      for (let pageNumber = startPage; pageNumber <= endPage; pageNumber += 1) {
+        const pageText = await getNormalizedPageText(
+          pdf,
+          pageNumber,
+          pageTextPromisesRef.current
+        );
+        if (pageText.includes(normalizedTitle)) return pageNumber;
       }
-
-      if (!finalTextBottom) return null;
-      const pageTop = pageRefs.current[finalTextBottom.page - 1]?.offsetTop ?? pageTopOffsets[finalTextBottom.page - 1];
-      if (pageTop === undefined) return null;
-      return getSongEndProgress({
-        pageTopPx: pageTop,
-        textBottomInPagePx: finalTextBottom.bottomPx,
-        viewportHeightPx: metrics.viewportHeightPx,
-        maxScrollPx: metrics.maxScrollPx,
-        bottomBufferFraction,
-      });
+      return null;
     },
-    [
-      effectivePageHeights,
-      getPageTextBottomFraction,
-      getPageVisualBottomFraction,
-      getScrollMetrics,
-      numPages,
-      pageTopOffsets,
-      singlePageMode,
-    ]
+    []
   );
 
   useImperativeHandle(
@@ -473,7 +361,6 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       getProgressForPage,
       getCurrentPage,
       getScrollAnchor,
-      getScrollAnchorForPage,
       getProgressForAnchor,
       getCurrentProgress() {
         if (singlePageMode) return pageProgress(clampedVisiblePage, numPages);
@@ -482,12 +369,23 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return clamp01(el.scrollTop / maxScroll());
       },
       getScrollMetrics,
-      getSongEndProgress: getSongEndProgressForRange,
+      findMarkerPage,
       get numPages() {
         return numPages;
       },
     }),
-    [clampedVisiblePage, effectivePageHeights, getProgressForAnchor, getProgressForPage, getScrollAnchor, getScrollAnchorForPage, getScrollMetrics, getSongEndProgressForRange, numPages, pageTopOffsets, singlePageMode]
+    [
+      clampedVisiblePage,
+      effectivePageHeights,
+      getProgressForAnchor,
+      getProgressForPage,
+      getScrollAnchor,
+      getScrollMetrics,
+      findMarkerPage,
+      numPages,
+      pageTopOffsets,
+      singlePageMode,
+    ]
   );
 
   useEffect(() => {
@@ -799,4 +697,29 @@ async function loadPdfPageAspects(pdf: PdfDocumentLike): Promise<number[]> {
       return viewport.height / viewport.width;
     })
   );
+}
+
+async function getNormalizedPageText(
+  pdf: PdfTextDocumentLike,
+  pageNumber: number,
+  cache: Map<number, Promise<string>>
+): Promise<string> {
+  const existing = cache.get(pageNumber);
+  if (existing) return existing;
+
+  const promise = pdf
+    .getPage(pageNumber)
+    .then((page) => page.getTextContent())
+    .then((content) => normalizeMarkerText(content.items.map((item) => item.str).join(" ")))
+    .catch(() => "");
+  cache.set(pageNumber, promise);
+  return promise;
+}
+
+function normalizeMarkerText(value: string): string {
+  return value
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

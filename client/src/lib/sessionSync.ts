@@ -32,3 +32,37 @@ export function shouldSnapToSessionState(
     ) > SESSION_SYNC_SNAP_DELTA
   );
 }
+
+export function shouldSnapToScrollAnchor(
+  previousState: SessionState | null,
+  nextState: SessionState,
+  anchorChanged: boolean,
+  localProgress: number | null,
+  displayedProgress: number
+): boolean {
+  if (!nextState.scrollAnchor) return false;
+  if (!previousState) return true;
+
+  return (
+    !nextState.playing &&
+    (anchorChanged ||
+      previousState.playing !== nextState.playing ||
+      (localProgress !== null &&
+        Math.abs(displayedProgress - localProgress) > SESSION_SYNC_SNAP_DELTA))
+  );
+}
+
+export function shouldRefreshPlaybackOffset(
+  previousState: SessionState | null,
+  nextState: SessionState,
+  anchorChanged: boolean
+): boolean {
+  if (!nextState.playing || !nextState.scrollAnchor) return false;
+  if (!previousState) return true;
+
+  return (
+    !previousState.playing ||
+    previousState.playbackMode !== nextState.playbackMode ||
+    anchorChanged
+  );
+}

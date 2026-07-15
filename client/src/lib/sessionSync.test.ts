@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SessionState } from "@/types/session";
 import {
+  shouldRefreshPlaybackOffset,
   shouldAcceptSessionState,
+  shouldSnapToScrollAnchor,
   shouldSnapToSessionState,
 } from "./sessionSync";
 
@@ -66,5 +68,117 @@ describe("shouldSnapToSessionState", () => {
     expect(
       shouldSnapToSessionState(previous, makeState({ stateVersion: 2, progress: 0.22 }), 0.21)
     ).toBe(false);
+  });
+});
+
+describe("shouldSnapToScrollAnchor", () => {
+  it("snaps to the anchor on first state", () => {
+    expect(
+      shouldSnapToScrollAnchor(
+        null,
+        makeState({ scrollAnchor: { page: 2, fraction: 0.4 } }),
+        true,
+        0.35,
+        0
+      )
+    ).toBe(true);
+  });
+
+  it("snaps to the anchor when playback pauses even if the anchor was already staged", () => {
+    const previous = makeState({ playing: true, scrollAnchor: { page: 2, fraction: 0.4 } });
+
+    expect(
+      shouldSnapToScrollAnchor(
+        previous,
+        makeState({
+          stateVersion: 2,
+          playing: false,
+          scrollAnchor: { page: 2, fraction: 0.4 },
+        }),
+        false,
+        0.35,
+        0.2
+      )
+    ).toBe(true);
+  });
+
+  it("keeps playing updates on the smooth progress trajectory", () => {
+    const previous = makeState({ playing: true, scrollAnchor: { page: 2, fraction: 0.4 } });
+
+    expect(
+      shouldSnapToScrollAnchor(
+        previous,
+        makeState({
+          stateVersion: 2,
+          playing: true,
+          scrollAnchor: { page: 2, fraction: 0.6 },
+        }),
+        true,
+        0.45,
+        0.2
+      )
+    ).toBe(false);
+  });
+
+  it("re-snaps a paused viewer when its displayed position drifted away from the anchor", () => {
+    const previous = makeState({ playing: false, scrollAnchor: { page: 2, fraction: 0.4 } });
+
+    expect(
+      shouldSnapToScrollAnchor(
+        previous,
+        makeState({
+          stateVersion: 2,
+          playing: false,
+          scrollAnchor: { page: 2, fraction: 0.4 },
+        }),
+        false,
+        0.35,
+        0.2
+      )
+    ).toBe(true);
+  });
+});
+
+describe("shouldRefreshPlaybackOffset", () => {
+  it("calibrates the playback trajectory on the first playing anchor", () => {
+    expect(
+      shouldRefreshPlaybackOffset(
+        null,
+        makeState({ scrollAnchor: { page: 2, fraction: 0.4 }, playing: true }),
+        true
+      )
+    ).toBe(true);
+  });
+
+  it("does not recalibrate a steady playing update without a new anchor event", () => {
+    const previous = makeState({ playing: true, scrollAnchor: { page: 2, fraction: 0.4 } });
+
+    expect(
+      shouldRefreshPlaybackOffset(
+        previous,
+        makeState({
+          stateVersion: 2,
+          playing: true,
+          scrollAnchor: { page: 2, fraction: 0.4 },
+        }),
+        false
+      )
+    ).toBe(false);
+  });
+
+  it("recalibrates when an explicit playing reposition provides a new anchor", () => {
+    const previous = makeState({ playing: true, scrollAnchor: { page: 2, fraction: 0.4 } });
+
+    expect(
+      shouldRefreshPlaybackOffset(
+        previous,
+        makeState({
+          stateVersion: 2,
+          playing: true,
+          scrollAnchor: { page: 2, fraction: 0.6 },
+        }),
+        true
+      )
+    ).toBe(true);
   });
 });

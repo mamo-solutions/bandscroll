@@ -40,6 +40,7 @@ import {
   type AdminShortcutSlot,
 } from "@/lib/adminShortcuts";
 import { reportError } from "@/lib/errorLog";
+import { resolveMarkerPages } from "@/lib/markerPageResolution";
 import {
   clampPage,
   getPageDwellMs,
@@ -105,13 +106,13 @@ export function AdminSessionControl() {
   // Set true when scroll-mode auto-stop has fired; suppresses further advance
   // until the authoritative paused state arrives back via session-state.
   const autoStopEngagedRef = useRef(false);
-  const autoStopTargetsRef = useRef(new Map<string, number>());
   const lastAnchorBroadcastAtRef = useRef(0);
+  const markerRepairSignatureRef = useRef<string | null>(null);
+  const markerRepairInFlightRef = useRef(false);
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SCREENS_STEP = 0.5;
   const FACTORY_SPEED = 0.0002;
-  const MARKER_TOP_PADDING_PX = 40;
   const socket = getSocket();
   const socketStatus = useSocketStatus();
 
@@ -156,6 +157,57 @@ export function AdminSessionControl() {
   useEffect(() => {
     if (!session?.pdfUrl) setScrollMetrics(null);
   }, [session?.pdfUrl]);
+
+  useEffect(() => {
+    const currentSession = stateRef.current;
+    const viewer = viewerRef.current;
+    if (
+      !currentSession?.pdfUrl ||
+      !viewer ||
+      numPages <= 0 ||
+      markerRepairInFlightRef.current ||
+      (currentSession.markers?.length ?? 0) === 0
+    ) {
+      return;
+    }
+
+    const signature = [
+      currentSession.id,
+      currentSession.pdfUrl,
+      ...currentSession.markers.map((marker) => `${marker.id}:${marker.title}:${marker.page}`),
+    ].join("|");
+    if (markerRepairSignatureRef.current === signature) return;
+
+    markerRepairInFlightRef.current = true;
+    void (async () => {
+      try {
+        const repairedMarkers = await resolveMarkerPages(
+          currentSession.markers,
+          Math.max(numPagesRef.current, 1),
+          (title, minimumPage, maximumPage) =>
+            viewer.findMarkerPage(title, minimumPage, maximumPage)
+        );
+        const changed = repairedMarkers.some(
+          (marker, index) => marker.page !== currentSession.markers[index]?.page
+        );
+
+        if (changed) {
+          patchSession({ markers: repairedMarkers });
+          setMarkers(repairedMarkers);
+        }
+
+        markerRepairSignatureRef.current = changed
+          ? [
+              currentSession.id,
+              currentSession.pdfUrl,
+              ...repairedMarkers.map((marker) => `${marker.id}:${marker.title}:${marker.page}`),
+            ].join("|")
+          : signature;
+      } finally {
+        markerRepairInFlightRef.current = false;
+      }
+    })();
+  }, [numPages, patchSession, session?.id, session?.markers, session?.pdfUrl]);
 
   useEffect(() => {
     saveShortcutBindings(shortcutBindings);
@@ -490,56 +542,29 @@ export function AdminSessionControl() {
     setSpeed(screensPerMinuteToSpeed(nextScreensPerMinute, metrics.scrollableScreens));
   }
 
-  async function play() {
+  function play() {
     const currentSession = stateRef.current;
     if (!currentSession) return;
 
     // Resuming re-arms auto-stop; the boundary just left is now behind us.
     autoStopEngagedRef.current = false;
-    autoStopTargetsRef.current = await getAutoStopTargets(currentSession);
-
-    if (stateRef.current !== currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
-      socket.emit("admin-seek", {
-        sessionId: id,
-        progress: liveProgressRef.current,
-        scrollAnchor: viewerRef.current?.getScrollAnchor(),
-      });
+      const progress = liveProgressRef.current;
+      const scrollAnchor = viewerRef.current?.getScrollAnchor() ?? undefined;
+      patchSession({ playing: true, status: "live", progress, scrollAnchor });
+      socket.emit("admin-play", { sessionId: id, progress, scrollAnchor });
     } else {
-      socket.emit("admin-set-page", { sessionId: id, page: currentSession.currentPage });
+      patchSession({
+        playing: true,
+        status: "live",
+        currentPage: currentSession.currentPage,
+      });
+      socket.emit("admin-play", {
+        sessionId: id,
+        currentPage: currentSession.currentPage,
+      });
     }
-
-    patchSession({ playing: true, status: "live" });
-    socket.emit("admin-play", id);
-  }
-
-  async function getAutoStopTargets(currentSession: SessionState): Promise<Map<string, number>> {
-    const targets = new Map<string, number>();
-    const viewer = viewerRef.current;
-    if (!viewer || currentSession.playbackMode !== "scroll" || !currentSession.autoStopAtSongEnd) {
-      return targets;
-    }
-
-    const metrics = viewer.getScrollMetrics();
-    const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
-    await Promise.all(
-      markers.slice(1).map(async (marker, index) => {
-        const previousMarker = markers[index];
-        if (marker.page <= previousMarker.page) return;
-        const textProgress = await viewer.getSongEndProgress(previousMarker.page, marker.page, 0.15);
-        const pageTopProgress = viewer.getProgressForPage(marker.page);
-        const fallbackProgress =
-          metrics && metrics.maxScrollPx > 0
-            ? clamp01(
-                (pageTopProgress * metrics.maxScrollPx - metrics.viewportHeightPx) /
-                  metrics.maxScrollPx
-              )
-            : pageTopProgress;
-        if (fallbackProgress > 0) targets.set(marker.id, textProgress ?? fallbackProgress);
-      })
-    );
-    return targets;
   }
 
   function pause() {
@@ -547,17 +572,17 @@ export function AdminSessionControl() {
     if (!currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
-      socket.emit("admin-seek", {
-        sessionId: id,
-        progress: liveProgressRef.current,
-        scrollAnchor: viewerRef.current?.getScrollAnchor(),
-      });
+      const progress = liveProgressRef.current;
+      const scrollAnchor = viewerRef.current?.getScrollAnchor() ?? undefined;
+      patchSession({ playing: false, progress, scrollAnchor });
+      socket.emit("admin-pause", { sessionId: id, progress, scrollAnchor });
     } else {
-      socket.emit("admin-set-page", { sessionId: id, page: currentSession.currentPage });
+      patchSession({ playing: false, currentPage: currentSession.currentPage });
+      socket.emit("admin-pause", {
+        sessionId: id,
+        currentPage: currentSession.currentPage,
+      });
     }
-
-    patchSession({ playing: false });
-    socket.emit("admin-pause", id);
   }
 
   function stop() {
@@ -699,14 +724,13 @@ export function AdminSessionControl() {
   }
 
   /** Scroll-mode auto-stop: halt playback the moment this frame's advance
-   *  crosses a song boundary, via the normal authoritative pause. Text-aware
-   *  targets place the finishing song's final text at 85% of the conductor's
-   *  viewport; scanned content falls back to the existing page-boundary target.
-   *  Detection is
-   *  a crossing test against the previous frame's progress — NOT `getCurrentPage()`,
-   *  whose nearest-page rounding flips a boundary early and would skip it. A
-   *  manual seek moves progress outside this loop, so it never spans a boundary
-   *  here and can't false-fire. Page mode is handled server-side in nextPlaybackPatch. */
+   *  crosses a song boundary, via the normal authoritative pause. The stop
+   *  lands one viewport-height before the next song's page top, so the boundary
+   *  sits at the bottom of the screen and the finishing song's last page stays
+   *  visible. Detection is a crossing test against the previous frame's
+   *  progress — NOT `getCurrentPage()`, whose nearest-page rounding flips a
+   *  boundary early and would skip it. Page mode is handled server-side in
+   *  nextPlaybackPatch. */
   function maybeAutoStopAtSongEnd(prevProgress: number) {
     const currentSession = stateRef.current;
     if (!currentSession?.autoStopAtSongEnd || !currentSession.playing) return;
@@ -714,15 +738,23 @@ export function AdminSessionControl() {
     if (!viewer) return;
     const newProgress = liveProgressRef.current;
     if (newProgress <= prevProgress) return;
+    const metrics = viewer.getScrollMetrics();
     const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
-    for (let index = 1; index < markers.length; index += 1) {
-      const marker = markers[index];
-      if (marker.page <= markers[index - 1].page) continue;
-      const stopProgress = autoStopTargetsRef.current.get(marker.id);
-      if (stopProgress === undefined) continue;
+    for (const marker of markers) {
+      const pageTopProgress =
+        viewer.getProgressForPage(marker.page) ??
+        clamp01((marker.page - 1) / Math.max(numPagesRef.current, 1));
+      if (pageTopProgress <= 0) continue;
+      const stopProgress =
+        metrics && metrics.maxScrollPx > 0
+          ? clamp01(
+              (pageTopProgress * metrics.maxScrollPx - metrics.viewportHeightPx) /
+                metrics.maxScrollPx
+            )
+          : pageTopProgress;
+      if (stopProgress <= 0) continue;
       if (prevProgress < stopProgress && stopProgress <= newProgress) {
         liveProgressRef.current = stopProgress;
-        viewer.scrollToProgress(stopProgress);
         autoStopEngagedRef.current = true;
         pause();
         return;
@@ -787,21 +819,30 @@ export function AdminSessionControl() {
     return current;
   }
 
-  function seekToMarker(marker: SongMarker) {
-    const { page } = marker;
-    if (!numPages || page < 1 || page > numPages) return;
+  async function seekToMarker(marker: SongMarker) {
+    const currentSession = stateRef.current;
+    if (!numPages || marker.page < 1 || marker.page > numPages) return;
     // Restore the tempo captured for this song, if any, without re-persisting it.
     if (typeof marker.speed === "number" && marker.speed > 0) {
       setSpeed(marker.speed, { persistToMarker: false });
     }
-    if (stateRef.current?.playbackMode === "page") {
+    const viewer = viewerRef.current;
+    const resolvedPage =
+      (await viewer?.findMarkerPage(marker.title, Math.max(1, marker.page - 1))) ??
+      marker.page;
+    const page = clampPage(resolvedPage, Math.max(numPages, 1));
+    if (currentSession?.playbackMode === "page") {
+      if (page !== marker.page && currentSession) {
+        const nextMarkers = currentSession.markers.map((entry) =>
+          entry.id === marker.id ? { ...entry, page } : entry
+        );
+        setMarkers(nextMarkers);
+      }
       goToPage(page);
       pause();
       return;
     }
-    const viewer = viewerRef.current;
-    const scrollAnchor =
-      viewer?.getScrollAnchorForPage(page, MARKER_TOP_PADDING_PX) ?? { page, fraction: 0 };
+    const scrollAnchor = { page, fraction: 0 };
     const progress =
       viewer?.getProgressForAnchor(scrollAnchor) ??
       viewer?.getProgressForPage(page) ??
@@ -809,10 +850,17 @@ export function AdminSessionControl() {
     liveProgressRef.current = progress;
     lastWallRef.current = Date.now();
     viewer?.scrollToAnchor(scrollAnchor);
-    patchSession({ progress, scrollAnchor });
-    setUiProgress(getPlaybackDisplayProgress("scroll", progress, 1, numPages));
-    socket.emit("admin-seek", { sessionId: id, progress, scrollAnchor });
-    pause();
+    patchSession({ progress, scrollAnchor, playing: false });
+    setUiProgress(
+      getPlaybackDisplayProgress(currentSession?.playbackMode ?? "scroll", progress, currentSession?.currentPage ?? 1, numPages)
+    );
+    if (page !== marker.page && currentSession) {
+      const nextMarkers = currentSession.markers.map((entry) =>
+        entry.id === marker.id ? { ...entry, page } : entry
+      );
+      setMarkers(nextMarkers);
+    }
+    socket.emit("admin-pause", { sessionId: id, progress, scrollAnchor });
   }
 
   function jumpToNextMarker() {

@@ -17,7 +17,9 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { reportError } from "@/lib/errorLog";
 import { getPlaybackDisplayProgress } from "@/lib/playback";
 import {
+  shouldRefreshPlaybackOffset,
   shouldAcceptSessionState,
+  shouldSnapToScrollAnchor,
   shouldSnapToSessionState,
   type ViewerConnectionPhase,
 } from "@/lib/sessionSync";
@@ -143,19 +145,24 @@ export function SessionViewer() {
             anchorProgressRef.current = localProgress;
             lastAnchorRef.current = nextSession.scrollAnchor;
           }
-          const shouldSnapToAnchor =
-            previousSession === null ||
-            (!nextSession.playing && anchorChanged);
+          if (
+            localProgress !== null &&
+            shouldRefreshPlaybackOffset(previousSession, nextSession, anchorChanged)
+          ) {
+            playbackProgressOffsetRef.current = localProgress - nextSession.progress;
+          }
+          const shouldSnapToAnchor = shouldSnapToScrollAnchor(
+            previousSession,
+            nextSession,
+            anchorChanged,
+            localProgress,
+            displayedRef.current
+          );
           if (localProgress !== null && shouldSnapToAnchor) {
             displayedRef.current = localProgress;
             viewerRef.current.scrollToAnchor(nextSession.scrollAnchor);
             setUiProgress(localProgress);
-            playbackProgressOffsetRef.current = nextSession.playing
-              ? localProgress - nextSession.progress
-              : 0;
-          }
-          if (previousSession?.playing === false && nextSession.playing) {
-            playbackProgressOffsetRef.current = displayedRef.current - nextSession.progress;
+            if (!nextSession.playing) playbackProgressOffsetRef.current = 0;
           }
         } else if (
           shouldSnapToSessionState(previousSession, nextSession, displayedRef.current)

@@ -1221,6 +1221,39 @@ describe("Socket.IO sync", () => {
     admin.close();
   });
 
+  it("broadcasts an authenticated admin pause with the supplied scroll anchor", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Paused anchor");
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once(viewer, "session-state");
+
+    const admin = await connect({ Cookie: cookie });
+    admin.emit("admin-join-session", body.id);
+    await sleep(150);
+    admin.emit("admin-pause", {
+      sessionId: body.id,
+      progress: 0.42,
+      scrollAnchor: { page: 3, fraction: 0.25 },
+    });
+
+    const state = await waitForState(
+      viewer,
+      (s) =>
+        Math.abs(s.progress - 0.42) < 1e-6 &&
+        s.playing === false &&
+        s.scrollAnchor?.page === 3 &&
+        Math.abs((s.scrollAnchor?.fraction ?? 0) - 0.25) < 1e-6
+    );
+    expect(state.progress).toBeCloseTo(0.42, 5);
+    expect(state.playing).toBe(false);
+    expect(state.scrollAnchor).toEqual({ page: 3, fraction: 0.25 });
+
+    viewer.close();
+    admin.close();
+  });
+
   it("rejects a websocket handshake from a mismatched Origin", async () => {
     const rejected = io(base, {
       transports: ["websocket"],

@@ -10,6 +10,7 @@ import {
   listAdminSessions,
   updateSessionState,
   clampProgress,
+  type SessionPatch,
 } from "../sessionStore.js";
 import type { SessionState } from "../types.js";
 import { logger } from "../lib/logger.js";
@@ -38,6 +39,45 @@ function roomFor(code: string): string {
 function emitSessionState(socket: Socket, session: SessionState): void {
   metrics.recordSessionStateBroadcast();
   socket.emit("session-state", session);
+}
+
+type AdminPlaybackControlPayload =
+  | string
+  | {
+      sessionId?: string;
+      progress?: number;
+      scrollAnchor?: { page: number; fraction: number };
+      currentPage?: number;
+    };
+
+function playbackControlSessionId(payload: AdminPlaybackControlPayload): string {
+  return typeof payload === "string" ? payload : String(payload?.sessionId);
+}
+
+function playbackControlPatch(
+  payload: AdminPlaybackControlPayload
+): Pick<SessionPatch, "progress" | "scrollAnchor" | "currentPage"> {
+  if (typeof payload === "string") return {};
+
+  const patch: Pick<SessionPatch, "progress" | "scrollAnchor" | "currentPage"> = {};
+
+  if (payload?.progress !== undefined) {
+    patch.progress = clampProgress(Number(payload.progress));
+  }
+
+  if (
+    payload?.scrollAnchor &&
+    Number.isFinite(payload.scrollAnchor.page) &&
+    Number.isFinite(payload.scrollAnchor.fraction)
+  ) {
+    patch.scrollAnchor = payload.scrollAnchor;
+  }
+
+  if (payload?.currentPage !== undefined && Number.isFinite(payload.currentPage)) {
+    patch.currentPage = clampCurrentPage(Number(payload.currentPage));
+  }
+
+  return patch;
 }
 
 /** True if this socket's shared express-session is an authenticated admin. */
@@ -194,16 +234,18 @@ export function initSocketServer(
       log.info("admin join", { id: socket.id, code: session.code });
     });
 
-    socket.on("admin-play", (sessionId: string) => {
+    socket.on("admin-play", (payload: AdminPlaybackControlPayload) => {
       if (!guardAdmin("admin-play")) return;
-      adminUpdate(String(sessionId), { playing: true, status: "live" });
-      log.info("admin play", { id: socket.id, sessionId: String(sessionId) });
+      const sessionId = playbackControlSessionId(payload);
+      adminUpdate(sessionId, { playing: true, status: "live", ...playbackControlPatch(payload) });
+      log.info("admin play", { id: socket.id, sessionId });
     });
 
-    socket.on("admin-pause", (sessionId: string) => {
+    socket.on("admin-pause", (payload: AdminPlaybackControlPayload) => {
       if (!guardAdmin("admin-pause")) return;
-      adminUpdate(String(sessionId), { playing: false });
-      log.info("admin pause", { id: socket.id, sessionId: String(sessionId) });
+      const sessionId = playbackControlSessionId(payload);
+      adminUpdate(sessionId, { playing: false, ...playbackControlPatch(payload) });
+      log.info("admin pause", { id: socket.id, sessionId });
     });
 
     socket.on("admin-stop", (sessionId: string) => {

@@ -265,7 +265,7 @@ export const de = {
   "control.backgroundHint":
     "Lege fest, ob die Partitur in der Session auf hellem oder schwarzem Hintergrund angezeigt wird.",
   "control.autoStopHint":
-    "Pausiert die Wiedergabe am letzten Text jedes Songs mit einem kleinen unteren Abstand. Clients folgen der Position des Dirigenten und können je nach Bildschirm leicht abweichen.",
+    "Pausiert die Wiedergabe kurz vor dem nächsten Marker, damit du jeden Song bewusst neu starten kannst.",
   "control.markerHint": "Lege Songs als Marker an, damit du während der Session schneller springen kannst.",
   "control.aiMarkersCreate": "Marker mit KI erstellen",
   "control.aiMarkersUpdate": "Marker mit KI aktualisieren",
@@ -573,7 +573,7 @@ export const en: Record<TKey, string> = {
   "control.backgroundHint":
     "Choose whether the score is shown on a light or black background during the session.",
   "control.autoStopHint":
-    "Pauses at each song's final text with a small bottom margin. Clients follow the conductor's position and can vary slightly by screen size.",
+    "Pauses shortly before the next marker so you can restart each song deliberately.",
   "control.markerHint": "Create song markers so you can jump faster during the session.",
   "control.aiMarkersCreate": "Create markers with AI",
   "control.aiMarkersUpdate": "Update markers with AI",
