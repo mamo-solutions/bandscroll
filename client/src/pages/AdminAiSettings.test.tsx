@@ -128,7 +128,8 @@ describe("AdminAiSettings", () => {
   it("saves config updates", async () => {
     renderPage();
 
-    const saveButton = (await screen.findAllByRole("button", { name: "Save settings" }))[0];
+    await screen.findByDisplayValue("https://api.example.com/v1");
+    const saveButton = screen.getAllByRole("button", { name: "Save settings" })[0];
     fireEvent.change(screen.getByLabelText("API key"), { target: { value: "new-key" } });
     fireEvent.click(saveButton);
 
