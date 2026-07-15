@@ -102,6 +102,7 @@ export type SessionPatch = Partial<
     | "status"
     | "playing"
     | "progress"
+    | "scrollAnchor"
     | "speed"
     | "markers"
     | "locked"
@@ -121,6 +122,12 @@ export function updateSessionState(
   if (!session) return undefined;
   const hasChanges = Object.keys(patch).length > 0;
   if (patch.progress !== undefined) patch.progress = clampProgress(patch.progress);
+  if (patch.scrollAnchor !== undefined) {
+    patch.scrollAnchor = {
+      page: clampCurrentPage(patch.scrollAnchor.page),
+      fraction: clampProgress(patch.scrollAnchor.fraction),
+    };
+  }
   if (patch.currentPage !== undefined) patch.currentPage = clampCurrentPage(patch.currentPage);
   if (patch.numPages !== undefined) patch.numPages = Math.max(0, Math.round(patch.numPages) || 0);
   Object.assign(session, patch);

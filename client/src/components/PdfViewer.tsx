@@ -10,12 +10,14 @@ import { Loader2 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
-import type { SessionBackgroundMode } from "@/types/session";
+import type { ScrollAnchor, SessionBackgroundMode } from "@/types/session";
 import {
+  anchorToScrollTop,
   getEffectivePageHeights,
   getPageTopOffsets,
   getReservedPageHeights,
   getSinglePageWidth,
+  scrollTopToAnchor,
   getVisiblePageRange,
 } from "./pdfViewerLayout";
 import {
@@ -55,6 +57,9 @@ export type PdfViewerHandle = {
   getCurrentPage: () => number;
   getCurrentProgress: () => number;
   getScrollMetrics: () => PdfViewerScrollMetrics | null;
+  getScrollAnchor: () => ScrollAnchor | null;
+  getProgressForAnchor: (anchor: ScrollAnchor) => number | null;
+  scrollToAnchor: (anchor: ScrollAnchor) => void;
   getSongEndProgress: (
     startPage: number,
     nextMarkerPage: number,
@@ -252,6 +257,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return Math.max(1, el.scrollHeight - el.clientHeight);
   };
 
+  const hasScrollGeometry = () => {
+    const el = scrollRef.current;
+    return (
+      !singlePageMode &&
+      readyRef.current &&
+      el !== null &&
+      pageTopOffsets.length === numPages &&
+      effectivePageHeights.length === numPages &&
+      el.scrollHeight > el.clientHeight
+    );
+  };
+
   const getScrollMetrics = useCallback((): PdfViewerScrollMetrics | null => {
     const el = scrollRef.current;
     if (!el || !readyRef.current || singlePageMode) return null;
@@ -292,6 +309,19 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       }
     }
     return nearestPage;
+  };
+
+  const getScrollAnchor = () => {
+    if (singlePageMode) return { page: clampedVisiblePage, fraction: 0 };
+    const el = scrollRef.current;
+    if (!el || !hasScrollGeometry()) return null;
+    return scrollTopToAnchor(el.scrollTop, pageTopOffsets, effectivePageHeights);
+  };
+
+  const getProgressForAnchor = (anchor: ScrollAnchor): number | null => {
+    if (!hasScrollGeometry()) return null;
+    const scrollTop = anchorToScrollTop(anchor, pageTopOffsets, effectivePageHeights, maxScroll());
+    return scrollTop === null ? null : clamp01(scrollTop / maxScroll());
   };
 
   const getPageTextBottomFraction = useCallback(
@@ -417,8 +447,21 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         if (pageTop == null) return;
         el.scrollTop = pageTop;
       },
+      scrollToAnchor(anchor: ScrollAnchor) {
+        const el = scrollRef.current;
+        if (!el || !hasScrollGeometry()) return;
+        const scrollTop = anchorToScrollTop(
+          anchor,
+          pageTopOffsets,
+          effectivePageHeights,
+          maxScroll()
+        );
+        if (scrollTop !== null) el.scrollTop = scrollTop;
+      },
       getProgressForPage,
       getCurrentPage,
+      getScrollAnchor,
+      getProgressForAnchor,
       getCurrentProgress() {
         if (singlePageMode) return pageProgress(clampedVisiblePage, numPages);
         const el = scrollRef.current;
@@ -431,7 +474,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         return numPages;
       },
     }),
-    [clampedVisiblePage, getProgressForPage, getScrollMetrics, getSongEndProgressForRange, numPages, pageTopOffsets, singlePageMode]
+    [clampedVisiblePage, effectivePageHeights, getProgressForAnchor, getProgressForPage, getScrollAnchor, getScrollMetrics, getSongEndProgressForRange, numPages, pageTopOffsets, singlePageMode]
   );
 
   useEffect(() => {
@@ -649,8 +692,13 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               chromeFlush ? "px-0 pt-0" : "px-2 pt-3 sm:px-4",
               singlePageMode
                 ? cn("flex h-full items-center justify-center", chromeFlush ? "pb-0" : "pb-3")
-                : cn("flex flex-col items-center", chromeFlush ? "gap-0 pb-0" : "gap-3 pb-[55vh]")
+                : cn("flex flex-col items-center", chromeFlush ? "gap-0" : "gap-3")
             )}
+            style={
+              singlePageMode
+                ? undefined
+                : { paddingBottom: Math.max(1, containerHeight) }
+            }
           >
             {Array.from({ length: numPages }, (_, i) => {
               if (singlePageMode && i !== clampedVisiblePage - 1) return null;

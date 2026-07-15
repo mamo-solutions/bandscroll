@@ -2,6 +2,11 @@ export type SessionStatus = "draft" | "live" | "ended";
 export type PlaybackMode = "scroll" | "page";
 export type SessionBackgroundMode = "light" | "black";
 
+export type ScrollAnchor = {
+  page: number;
+  fraction: number;
+};
+
 export type SongMarker = {
   id: string;
   title: string;
@@ -19,6 +24,7 @@ export type SessionState = {
   status: SessionStatus;
   playing: boolean;
   progress: number; // 0.0 .. 1.0
+  scrollAnchor?: ScrollAnchor;
   speed: number; // progress per second
   updatedAt: number; // server timestamp in ms
   connectedClients: number;

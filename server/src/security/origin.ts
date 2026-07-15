@@ -7,12 +7,13 @@ type AllowedOrigin = {
   websocketOrigin: string;
 };
 
-const DEV_APP_ORIGINS = [
-  "http://localhost:5173",
-  "ws://localhost:5173",
-  "http://127.0.0.1:5173",
-  "ws://127.0.0.1:5173",
-] as const;
+const DEV_APP_PORTS = [5173, 5174] as const;
+const DEV_APP_ORIGINS = DEV_APP_PORTS.flatMap((port) => [
+  `http://localhost:${port}`,
+  `ws://localhost:${port}`,
+  `http://127.0.0.1:${port}`,
+  `ws://127.0.0.1:${port}`,
+]);
 
 function normalizeOrigin(value: string): string | null {
   try {

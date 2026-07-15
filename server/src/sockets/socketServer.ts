@@ -211,6 +211,7 @@ export function initSocketServer(
       adminUpdate(String(sessionId), {
         playing: false,
         progress: 0,
+        scrollAnchor: { page: 1, fraction: 0 },
         currentPage: 1,
       });
       log.info("admin stop", { id: socket.id, sessionId: String(sessionId) });
@@ -218,15 +219,55 @@ export function initSocketServer(
 
     socket.on(
       "admin-seek",
-      (payload: { sessionId: string; progress: number }) => {
+      (payload: {
+        sessionId: string;
+        progress: number;
+        scrollAnchor?: { page: number; fraction: number };
+      }) => {
         if (!guardAdmin("admin-seek")) return;
-        adminUpdate(String(payload?.sessionId), {
+        const patch: Parameters<typeof updateSessionState>[1] = {
           progress: clampProgress(Number(payload?.progress)),
-        });
+        };
+        if (
+          payload?.scrollAnchor &&
+          Number.isFinite(payload.scrollAnchor.page) &&
+          Number.isFinite(payload.scrollAnchor.fraction)
+        ) {
+          patch.scrollAnchor = payload.scrollAnchor;
+        }
+        adminUpdate(String(payload?.sessionId), patch);
         log.info("admin seek", {
           id: socket.id,
           sessionId: String(payload?.sessionId),
           progress: clampProgress(Number(payload?.progress)),
+        });
+      }
+    );
+
+    socket.on(
+      "admin-sync",
+      (payload: {
+        sessionId: string;
+        progress: number;
+        scrollAnchor?: { page: number; fraction: number };
+      }) => {
+        if (!guardAdmin("admin-sync")) return;
+        const patch: Parameters<typeof updateSessionState>[1] = {
+          progress: clampProgress(Number(payload?.progress)),
+        };
+        if (
+          payload?.scrollAnchor &&
+          Number.isFinite(payload.scrollAnchor.page) &&
+          Number.isFinite(payload.scrollAnchor.fraction)
+        ) {
+          patch.scrollAnchor = payload.scrollAnchor;
+        }
+        adminUpdate(String(payload?.sessionId), patch);
+        log.debug("admin sync", {
+          id: socket.id,
+          sessionId: String(payload?.sessionId),
+          progress: patch.progress,
+          scrollAnchor: patch.scrollAnchor,
         });
       }
     );

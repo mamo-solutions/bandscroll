@@ -39,6 +39,7 @@ export function SessionViewer() {
   const [distractionFree, setDistractionFree] = useState(false);
   const [numPages, setNumPages] = useState(0);
   const [connectionPhase, setConnectionPhase] = useState<ViewerConnectionPhase>("syncing");
+  const [anchorLayoutVersion, setAnchorLayoutVersion] = useState(0);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const stateRef = useRef<SessionState | null>(null);
@@ -48,6 +49,10 @@ export function SessionViewer() {
   const lastStateVersionRef = useRef(-1);
   const hasEverConnectedLiveRef = useRef(false);
   const awaitingSocketSnapshotRef = useRef(false);
+  const anchorProgressRef = useRef<number | null>(null);
+  const anchorReceivedAtRef = useRef(0);
+  const anchorSpeedRef = useRef(0);
+  const lastAnchorRef = useRef<SessionState["scrollAnchor"]>(undefined);
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
   useWakeLock(true);
@@ -70,6 +75,24 @@ export function SessionViewer() {
       )
     );
   };
+
+  useEffect(() => {
+    const currentSession = stateRef.current;
+    const viewer = viewerRef.current;
+    const anchor = currentSession?.scrollAnchor;
+    if (!currentSession || currentSession.playbackMode !== "scroll" || !anchor || !viewer) return;
+
+    const localProgress = viewer.getProgressForAnchor(anchor);
+    if (localProgress === null) return;
+
+    anchorProgressRef.current = localProgress;
+    anchorReceivedAtRef.current = Date.now();
+    anchorSpeedRef.current = 0;
+    lastAnchorRef.current = anchor;
+    displayedRef.current = localProgress;
+    viewer.scrollToAnchor(anchor);
+    setUiProgress(localProgress);
+  }, [anchorLayoutVersion]);
 
   useEffect(() => {
     const handler = () => {
@@ -106,7 +129,33 @@ export function SessionViewer() {
       setConnectionPhase("connected");
 
       if (nextSession.playbackMode === "scroll") {
-        if (
+        if (nextSession.scrollAnchor && viewerRef.current) {
+          const localProgress = viewerRef.current.getProgressForAnchor(nextSession.scrollAnchor);
+          const anchorChanged =
+            lastAnchorRef.current?.page !== nextSession.scrollAnchor.page ||
+            lastAnchorRef.current?.fraction !== nextSession.scrollAnchor.fraction;
+          if (localProgress !== null && anchorChanged) {
+            const now = Date.now();
+            const previousProgress = anchorProgressRef.current;
+            const elapsedMs = now - anchorReceivedAtRef.current;
+            anchorSpeedRef.current =
+              nextSession.playing && previousProgress !== null && elapsedMs > 0
+                ? (localProgress - previousProgress) / (elapsedMs / 1000)
+                : 0;
+            anchorProgressRef.current = localProgress;
+            anchorReceivedAtRef.current = now;
+            lastAnchorRef.current = nextSession.scrollAnchor;
+          }
+          const shouldSnapToAnchor =
+            previousSession === null ||
+            !nextSession.playing ||
+            previousSession.playing !== nextSession.playing;
+          if (localProgress !== null && shouldSnapToAnchor) {
+            displayedRef.current = localProgress;
+            viewerRef.current.scrollToAnchor(nextSession.scrollAnchor);
+            setUiProgress(localProgress);
+          }
+        } else if (
           shouldSnapToSessionState(previousSession, nextSession, displayedRef.current)
         ) {
           displayedRef.current = nextSession.progress;
@@ -161,7 +210,19 @@ export function SessionViewer() {
         const viewer = viewerRef.current;
         if (currentSession && viewer && currentSession.playbackMode === "scroll") {
           const elapsed = currentSession.playing ? Date.now() - receivedAtRef.current : 0;
-          const target = effectiveProgressFromElapsed(currentSession, elapsed);
+          const target =
+            currentSession.scrollAnchor && anchorProgressRef.current !== null
+              ? currentSession.playing
+                ? Math.min(
+                    1,
+                    Math.max(
+                      0,
+                      anchorProgressRef.current +
+                        (Date.now() - anchorReceivedAtRef.current) / 1000 * anchorSpeedRef.current
+                    )
+                  )
+                : anchorProgressRef.current
+              : effectiveProgressFromElapsed(currentSession, elapsed);
           const current = displayedRef.current;
           const diff = target - current;
           const next = Math.abs(diff) > 0.04 ? target : current + diff * 0.18;
@@ -415,6 +476,7 @@ export function SessionViewer() {
                 visiblePage={pageMode ? session.currentPage : undefined}
                 blockUserScroll
                 onDocumentLoad={setNumPages}
+                onMetricsChange={() => setAnchorLayoutVersion((version) => version + 1)}
               />
             </>
           ) : (

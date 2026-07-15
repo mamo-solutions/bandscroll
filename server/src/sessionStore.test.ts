@@ -146,6 +146,14 @@ describe("updateSessionState", () => {
     expect(updateSessionState(s.id, { currentPage: -1 })?.currentPage).toBe(1);
   });
 
+  it("clamps document-relative scroll anchors on update", () => {
+    const s = track(createSession({ title: "u" }));
+    expect(updateSessionState(s.id, { scrollAnchor: { page: 2.8, fraction: 1.4 } })?.scrollAnchor).toEqual({
+      page: 3,
+      fraction: 1,
+    });
+  });
+
   it("returns undefined for a missing session", () => {
     expect(updateSessionState("missing", { playing: true })).toBeUndefined();
   });

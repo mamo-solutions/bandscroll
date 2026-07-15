@@ -106,6 +106,7 @@ export function AdminSessionControl() {
   // until the authoritative paused state arrives back via session-state.
   const autoStopEngagedRef = useRef(false);
   const autoStopTargetsRef = useRef(new Map<string, number>());
+  const lastAnchorBroadcastAtRef = useRef(0);
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_SCREENS_STEP = 0.5;
@@ -336,6 +337,18 @@ export function AdminSessionControl() {
             maybeAutoStopAtSongEnd(prevProgress);
           }
           viewer.scrollToProgress(liveProgressRef.current);
+          const now = Date.now();
+          if (now - lastAnchorBroadcastAtRef.current >= 250) {
+            const scrollAnchor = viewer.getScrollAnchor();
+            if (scrollAnchor) {
+              lastAnchorBroadcastAtRef.current = now;
+              socket.emit("admin-sync", {
+                sessionId: id,
+                progress: liveProgressRef.current,
+                scrollAnchor,
+              });
+            }
+          }
         } else {
           autoStopEngagedRef.current = false;
           liveProgressRef.current = viewer.getCurrentProgress();
@@ -491,7 +504,11 @@ export function AdminSessionControl() {
     if (stateRef.current !== currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
-      socket.emit("admin-seek", { sessionId: id, progress: liveProgressRef.current });
+      socket.emit("admin-seek", {
+        sessionId: id,
+        progress: liveProgressRef.current,
+        scrollAnchor: viewerRef.current?.getScrollAnchor(),
+      });
     } else {
       socket.emit("admin-set-page", { sessionId: id, page: currentSession.currentPage });
     }
@@ -533,7 +550,11 @@ export function AdminSessionControl() {
     if (!currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
-      socket.emit("admin-seek", { sessionId: id, progress: liveProgressRef.current });
+      socket.emit("admin-seek", {
+        sessionId: id,
+        progress: liveProgressRef.current,
+        scrollAnchor: viewerRef.current?.getScrollAnchor(),
+      });
     } else {
       socket.emit("admin-set-page", { sessionId: id, page: currentSession.currentPage });
     }
@@ -595,7 +616,11 @@ export function AdminSessionControl() {
         numPages
       )
     );
-    socket.emit("admin-seek", { sessionId: id, progress: clampedProgress });
+    socket.emit("admin-seek", {
+      sessionId: id,
+      progress: clampedProgress,
+      scrollAnchor: viewerRef.current?.getScrollAnchor(),
+    });
   }
 
   function goToPage(page: number) {
@@ -700,6 +725,7 @@ export function AdminSessionControl() {
       if (stopProgress === undefined) continue;
       if (prevProgress < stopProgress && stopProgress <= newProgress) {
         liveProgressRef.current = stopProgress;
+        viewer.scrollToProgress(stopProgress);
         autoStopEngagedRef.current = true;
         pause();
         return;
@@ -738,10 +764,16 @@ export function AdminSessionControl() {
 
   /** Page the host is currently positioned on, across scroll/page modes. */
   function getCurrentPage() {
-    return stateRef.current?.playbackMode === "page"
-      ? stateRef.current.currentPage
-      : viewerRef.current?.getCurrentPage() ??
-          progressToNearestPage(liveProgressRef.current, Math.max(numPagesRef.current, 1));
+    if (stateRef.current?.playbackMode === "page") return stateRef.current.currentPage;
+
+    // Markers are page starts, so derive their page from the top-of-viewport
+    // document anchor. `getCurrentPage()` uses nearest-page rounding, which can
+    // select the following song while the current page is still on screen.
+    return (
+      viewerRef.current?.getScrollAnchor()?.page ??
+      viewerRef.current?.getCurrentPage() ??
+      progressToNearestPage(liveProgressRef.current, Math.max(numPagesRef.current, 1))
+    );
   }
 
   /** The marker whose song is currently playing: the last marker at or before
@@ -767,11 +799,22 @@ export function AdminSessionControl() {
     }
     if (stateRef.current?.playbackMode === "page") {
       goToPage(page);
+      pause();
       return;
     }
+    const scrollAnchor = { page, fraction: 0 };
+    const viewer = viewerRef.current;
     const progress =
-      viewerRef.current?.getProgressForPage(page) ?? clamp01((page - 1) / Math.max(numPages, 1));
-    seek(progress);
+      viewer?.getProgressForAnchor(scrollAnchor) ??
+      viewer?.getProgressForPage(page) ??
+      clamp01((page - 1) / Math.max(numPages, 1));
+    liveProgressRef.current = progress;
+    lastWallRef.current = Date.now();
+    viewer?.scrollToAnchor(scrollAnchor);
+    patchSession({ progress, scrollAnchor });
+    setUiProgress(getPlaybackDisplayProgress("scroll", progress, 1, numPages));
+    socket.emit("admin-seek", { sessionId: id, progress, scrollAnchor });
+    pause();
   }
 
   function jumpToNextMarker() {

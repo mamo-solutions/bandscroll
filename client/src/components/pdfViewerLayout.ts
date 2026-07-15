@@ -3,6 +3,40 @@ export type VisiblePageRange = {
   end: number;
 };
 
+export type ScrollAnchor = {
+  page: number;
+  fraction: number;
+};
+
+export function scrollTopToAnchor(
+  scrollTop: number,
+  pageTops: readonly number[],
+  pageHeights: readonly number[]
+): ScrollAnchor | null {
+  if (pageTops.length === 0 || pageHeights.length === 0) return null;
+  const clampedTop = Math.max(0, scrollTop);
+  let index = 0;
+  for (let candidate = 1; candidate < pageTops.length; candidate += 1) {
+    if (pageTops[candidate] > clampedTop) break;
+    index = candidate;
+  }
+  const height = Math.max(1, pageHeights[index] ?? 1);
+  return { page: index + 1, fraction: clamp01((clampedTop - pageTops[index]) / height) };
+}
+
+export function anchorToScrollTop(
+  anchor: ScrollAnchor,
+  pageTops: readonly number[],
+  pageHeights: readonly number[],
+  maxScrollPx: number
+): number | null {
+  const index = Math.round(anchor.page) - 1;
+  const pageTop = pageTops[index];
+  const pageHeight = pageHeights[index];
+  if (index < 0 || pageTop === undefined || pageHeight === undefined) return null;
+  return Math.min(Math.max(0, maxScrollPx), pageTop + clamp01(anchor.fraction) * pageHeight);
+}
+
 export function getReservedPageHeights(
   displayWidth: number,
   pageAspects: readonly number[]
@@ -89,4 +123,8 @@ export function getSinglePageWidth(
 function normalizeAspect(aspect: number): number {
   if (!Number.isFinite(aspect) || aspect <= 0) return 1;
   return aspect;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
