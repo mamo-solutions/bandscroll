@@ -10,7 +10,8 @@ import { Loader2 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
-import type { ScrollAnchor, SessionBackgroundMode } from "@/types/session";
+import type { DocumentCursor, DocumentGeometry, ScrollAnchor, SessionBackgroundMode } from "@/types/session";
+import { MICRO_POINTS_PER_POINT } from "@/types/session";
 import {
   anchorToScrollTop,
   getEffectivePageHeights,
@@ -53,6 +54,8 @@ export type PdfViewerHandle = {
   getScrollAnchor: () => ScrollAnchor | null;
   getProgressForAnchor: (anchor: ScrollAnchor) => number | null;
   scrollToAnchor: (anchor: ScrollAnchor) => void;
+  scrollToDocumentCursor: (cursor: DocumentCursor, geometry: DocumentGeometry) => void;
+  getDocumentCursor: (geometry: DocumentGeometry) => DocumentCursor | null;
   findMarkerPage: (title: string, minimumPage?: number, maximumPage?: number) => Promise<number | null>;
   readonly numPages: number;
 };
@@ -88,6 +91,8 @@ type Props = {
   visiblePage?: number;
   /** Called (already DOM-throttled by rAF) when the user scrolls manually. */
   onUserScroll?: (progress: number) => void;
+  onUserCursor?: (cursor: DocumentCursor) => void;
+  documentGeometry?: DocumentGeometry;
   /** Called when a PDF finishes loading with its page count. */
   onDocumentLoad?: (numPages: number) => void;
   /** Called whenever the viewer's scroll metrics become available or change. */
@@ -108,6 +113,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     flush = false,
     visiblePage,
     onUserScroll,
+    onUserCursor,
+    documentGeometry,
     onDocumentLoad,
     onMetricsChange,
     blockUserScroll,
@@ -302,6 +309,35 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     return scrollTop === null ? null : clamp01(scrollTop / maxScroll());
   };
 
+  const cursorToScrollTop = (cursor: DocumentCursor, geometry: DocumentGeometry): number | null => {
+    if (!hasScrollGeometry() || cursor.revision !== geometry.revision) return null;
+    let remainingPoints = cursor.yMicroPoints / MICRO_POINTS_PER_POINT;
+    for (let index = 0; index < geometry.pageHeightsPoints.length; index += 1) {
+      const pageHeightPoints = geometry.pageHeightsPoints[index];
+      if (remainingPoints <= pageHeightPoints || index === geometry.pageHeightsPoints.length - 1) {
+        const cssHeight = effectivePageHeights[index];
+        const top = pageTopOffsets[index];
+        if (cssHeight == null || top == null || pageHeightPoints <= 0) return null;
+        return top + (Math.max(0, remainingPoints) / pageHeightPoints) * cssHeight;
+      }
+      remainingPoints -= pageHeightPoints;
+    }
+    return null;
+  };
+
+  const scrollTopToCursor = (scrollTop: number, geometry: DocumentGeometry): DocumentCursor | null => {
+    if (!hasScrollGeometry() || geometry.pageHeightsPoints.length !== effectivePageHeights.length) return null;
+    for (let index = effectivePageHeights.length - 1; index >= 0; index -= 1) {
+      const top = pageTopOffsets[index];
+      if (top == null || scrollTop < top) continue;
+      const before = geometry.pageHeightsPoints.slice(0, index).reduce((sum, height) => sum + height, 0);
+      const localCss = Math.min(effectivePageHeights[index], Math.max(0, scrollTop - top));
+      const localPoints = (localCss / effectivePageHeights[index]) * geometry.pageHeightsPoints[index];
+      return { revision: geometry.revision, yMicroPoints: Math.round((before + localPoints) * MICRO_POINTS_PER_POINT) };
+    }
+    return { revision: geometry.revision, yMicroPoints: 0 };
+  };
+
   const findMarkerPage = useCallback(
     async (title: string, minimumPage = 1, maximumPage?: number): Promise<number | null> => {
       const pdf = pdfDocumentRef.current;
@@ -358,6 +394,15 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         );
         if (scrollTop !== null) el.scrollTop = scrollTop;
       },
+      scrollToDocumentCursor(cursor: DocumentCursor, geometry: DocumentGeometry) {
+        const el = scrollRef.current;
+        const top = cursorToScrollTop(cursor, geometry);
+        if (el && top !== null) el.scrollTop = top;
+      },
+      getDocumentCursor(geometry: DocumentGeometry) {
+        const el = scrollRef.current;
+        return el ? scrollTopToCursor(el.scrollTop, geometry) : null;
+      },
       getProgressForPage,
       getCurrentPage,
       getScrollAnchor,
@@ -384,6 +429,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       findMarkerPage,
       numPages,
       pageTopOffsets,
+      cursorToScrollTop,
+      scrollTopToCursor,
       singlePageMode,
     ]
   );
@@ -493,8 +540,14 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       if (onUserScroll && el) {
         onUserScroll(singlePageMode ? pageProgress(clampedVisiblePage, numPages) : clamp01(el.scrollTop / maxScroll()));
       }
+      // The parent deliberately receives a canonical coordinate, never a
+      // normalized scroll ratio, when a server geometry is available.
+      if (onUserCursor && documentGeometry && el) {
+        const cursor = scrollTopToCursor(el.scrollTop, documentGeometry);
+        if (cursor) onUserCursor(cursor);
+      }
     });
-  }, [clampedVisiblePage, numPages, onUserScroll, singlePageMode, updateRange]);
+  }, [clampedVisiblePage, documentGeometry, numPages, onUserCursor, onUserScroll, scrollTopToCursor, singlePageMode, updateRange]);
 
   const centerMsg = "flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground";
 

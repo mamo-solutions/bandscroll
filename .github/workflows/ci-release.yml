@@ -56,12 +56,14 @@ jobs:
         run: npm run build
         env:
           SKIP_VERSION_SYNC: "1"
+          BUILD_ID: ${{ steps.version.outputs.value }}+${{ github.sha }}
 
       - name: Package release assets
         run: |
           mkdir -p release-assets
           tar -czf "release-assets/bandscroll-client-v${VERSION}.tar.gz" -C client dist
           tar -czf "release-assets/bandscroll-server-v${VERSION}.tar.gz" -C server dist
+          node scripts/create-release-manifest.mjs release-assets
           sha256sum release-assets/* > "release-assets/bandscroll-v${VERSION}-sha256.txt"
         env:
           VERSION: ${{ steps.version.outputs.value }}

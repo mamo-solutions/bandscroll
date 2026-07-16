@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import type { SessionState } from "../types.js";
+import type { DocumentGeometry } from "../types.js";
+import { createDocumentGeometry } from "../lib/documentPosition.js";
 import { env } from "../env.js";
 import { extractUploadFilename } from "../uploads/cleanup.js";
 import type { DocumentPageEvidence } from "./types.js";
+import type { Canvas } from "@napi-rs/canvas";
 
 type CanvasModule = typeof import("@napi-rs/canvas");
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -92,6 +95,37 @@ export function createDocumentFingerprint(filePath: string): string {
   return digest.digest("hex");
 }
 
+/** Read the intrinsic PDF page heights once on upload. This is deliberately
+ * server-side: clients must never define the coordinate system they follow. */
+export async function readDocumentGeometry(filePath: string): Promise<DocumentGeometry | undefined> {
+  if (IMAGE_RE.test(filePath)) return undefined;
+  const { getDocument } = await getPdfJsModule();
+  const data = new Uint8Array(readFileSync(filePath));
+  const loadingTask = getDocument({
+    data,
+    isEvalSupported: false,
+    useSystemFonts: false,
+    standardFontDataUrl: standardFontDataUrl(),
+    verbosity: 0,
+  } as never);
+  const pdf = await loadingTask.promise;
+  try {
+    const heights: number[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const viewport = (await pdf.getPage(pageNumber)).getViewport({ scale: 1 });
+      heights.push(viewport.height);
+    }
+    return createDocumentGeometry(createDocumentFingerprint(filePath), heights);
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+export async function readSessionDocumentGeometry(session: SessionState): Promise<DocumentGeometry | undefined> {
+  if (!session.pdfUrl || IMAGE_RE.test(session.pdfUrl)) return undefined;
+  return readDocumentGeometry(resolveUploadPath(session));
+}
+
 async function renderPdfPageDataUrl(filePath: string, pageNumber: number): Promise<string> {
   const { createCanvas } = await getCanvasModule();
   const { getDocument } = await getPdfJsModule();
@@ -104,11 +138,12 @@ async function renderPdfPageDataUrl(filePath: string, pageNumber: number): Promi
     verbosity: 0,
   } as never);
   const pdf = await loadingTask.promise;
+  let canvas: Canvas | undefined;
 
   try {
     const page = await pdf.getPage(pageNumber);
     const viewport = page.getViewport({ scale: PDF_IMAGE_SCALE });
-    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
     const context = canvas.getContext("2d");
     await page.render({
       canvasContext: context as never,
@@ -117,6 +152,10 @@ async function renderPdfPageDataUrl(filePath: string, pageNumber: number): Promi
     }).promise;
     return `data:image/png;base64,${canvas.toBuffer("image/png").toString("base64")}`;
   } finally {
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
     await loadingTask.destroy();
   }
 }

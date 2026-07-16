@@ -7,11 +7,23 @@ export type ScrollAnchor = {
   fraction: number;
 };
 
+export type DocumentGeometry = {
+  revision: string;
+  pageHeightsPoints: number[];
+  totalHeightPoints: number;
+};
+
+export type DocumentCursor = {
+  revision: string;
+  yMicroPoints: number;
+};
+
 export type SongMarker = {
   id: string;
   title: string;
   page: number; // 1-indexed page number in the PDF
-  speed?: number; // scroll speed (progress/second) to restore when this marker is loaded
+  speed?: number; // Legacy scroll speed (progress/second), retained for migrated sessions.
+  scrollVelocityPointsPerSecond?: number; // Canonical PDF-point speed restored for this marker.
 };
 
 export type SessionState = {
@@ -37,7 +49,30 @@ export type SessionState = {
   currentPage: number;
   numPages: number;
   stateVersion: number;
+  documentGeometry?: DocumentGeometry;
+  documentCursor?: DocumentCursor;
+  scrollVelocityPointsPerSecond?: number;
+  positionUpdatedAt?: number;
+  controlVersion?: number;
 };
+
+export const MICRO_POINTS_PER_POINT = 1_000;
+
+export function effectiveDocumentCursor(
+  state: SessionState,
+  elapsedMs: number
+): DocumentCursor | undefined {
+  if (!state.documentCursor || !state.documentGeometry) return undefined;
+  const velocity = state.playing ? state.scrollVelocityPointsPerSecond ?? 0 : 0;
+  const maximum = Math.round(state.documentGeometry.totalHeightPoints * MICRO_POINTS_PER_POINT);
+  return {
+    revision: state.documentCursor.revision,
+    yMicroPoints: Math.min(
+      maximum,
+      Math.max(0, state.documentCursor.yMicroPoints + Math.round((velocity * elapsedMs * MICRO_POINTS_PER_POINT) / 1000))
+    ),
+  };
+}
 
 /** Compute live progress from the last server snapshot.
  *  NOTE: This compares client `now` against server `updatedAt`, so clock skew

@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { io, type Socket } from "socket.io-client";
 import { reportError } from "@/lib/errorLog";
+import { reloadForRuntimeUpdate, SYNC_PROTOCOL } from "@/lib/runtimeCompatibility";
+import { APP_VERSION } from "@/version";
 
 // Single shared socket connection (same origin; cookie sent automatically).
 let socket: Socket | null = null;
@@ -63,6 +65,15 @@ function installSocketLogging(s: Socket): void {
       state: "disconnected",
       connected: s.connected,
     });
+    if (err.message === "client-update-required") {
+      const runtimeError = err as Error & { data?: { buildId?: unknown } };
+      const targetBuildId =
+        typeof runtimeError.data?.buildId === "string"
+          ? runtimeError.data.buildId
+          : "unknown";
+      void reloadForRuntimeUpdate(targetBuildId);
+      return;
+    }
     reportError("socket.connect_error", err);
   });
   s.io.on("reconnect_attempt", (n) => {
@@ -95,6 +106,10 @@ function getOrCreateSocket(): Socket {
       reconnection: true,
       reconnectionDelay: 500,
       reconnectionDelayMax: 4000,
+      auth: {
+        syncProtocol: SYNC_PROTOCOL,
+        buildId: APP_VERSION,
+      },
     });
     installSocketLogging(socket);
   }

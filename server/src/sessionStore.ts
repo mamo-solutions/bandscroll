@@ -1,9 +1,22 @@
 import { randomUUID } from "node:crypto";
-import type { SessionState, SessionStatus } from "./types.js";
+import type { DocumentCursor, DocumentGeometry, SessionState, SessionStatus } from "./types.js";
+import { clampDocumentCursor } from "./lib/documentPosition.js";
 import { MemorySessionStore } from "./store/memorySessionStore.js";
 import type { SessionStoreAdapter } from "./store/sessionStoreAdapter.js";
 
 let adapter: SessionStoreAdapter = new MemorySessionStore();
+
+export const CANONICAL_SCROLL_VELOCITY_MIN = 3;
+export const CANONICAL_SCROLL_VELOCITY_MAX = 120;
+export const CANONICAL_SCROLL_VELOCITY_DEFAULT = 36;
+
+export function clampCanonicalScrollVelocity(value: number): number {
+  if (!Number.isFinite(value)) return CANONICAL_SCROLL_VELOCITY_DEFAULT;
+  return Math.min(
+    CANONICAL_SCROLL_VELOCITY_MAX,
+    Math.max(CANONICAL_SCROLL_VELOCITY_MIN, Math.round(value))
+  );
+}
 
 /** Replace the active storage backend (used once at app startup). */
 export function configureSessionStore(newAdapter: SessionStoreAdapter): void {
@@ -64,6 +77,11 @@ export function createSession(input: CreateSessionInput): SessionState {
     currentPage: 1,
     numPages: 0,
     stateVersion: 0,
+    documentGeometry: undefined,
+    documentCursor: undefined,
+    scrollVelocityPointsPerSecond: undefined,
+    positionUpdatedAt: now,
+    controlVersion: 0,
   };
   adapter.set(session.id, session);
   return session;
@@ -111,6 +129,11 @@ export type SessionPatch = Partial<
     | "autoStopAtSongEnd"
     | "currentPage"
     | "numPages"
+    | "documentGeometry"
+    | "documentCursor"
+    | "scrollVelocityPointsPerSecond"
+    | "positionUpdatedAt"
+    | "controlVersion"
   >
 >;
 
@@ -130,10 +153,36 @@ export function updateSessionState(
   }
   if (patch.currentPage !== undefined) patch.currentPage = clampCurrentPage(patch.currentPage);
   if (patch.numPages !== undefined) patch.numPages = Math.max(0, Math.round(patch.numPages) || 0);
+  if (patch.documentGeometry !== undefined) {
+    patch.documentGeometry = normalizeDocumentGeometry(patch.documentGeometry);
+  }
+  const geometry = patch.documentGeometry ?? session.documentGeometry;
+  if (patch.documentCursor !== undefined) {
+    patch.documentCursor = clampDocumentCursor(patch.documentCursor, geometry);
+  }
+  if (patch.scrollVelocityPointsPerSecond !== undefined) {
+    patch.scrollVelocityPointsPerSecond = clampCanonicalScrollVelocity(
+      Number(patch.scrollVelocityPointsPerSecond)
+    );
+  }
+  if (patch.controlVersion !== undefined) {
+    patch.controlVersion = Math.max(0, Math.round(patch.controlVersion) || 0);
+  }
   Object.assign(session, patch);
   session.updatedAt = Date.now();
   if (hasChanges) session.stateVersion += 1;
   return adapter.set(session.id, session);
+}
+
+function normalizeDocumentGeometry(geometry: DocumentGeometry): DocumentGeometry {
+  const pageHeightsPoints = Array.isArray(geometry.pageHeightsPoints)
+    ? geometry.pageHeightsPoints.map((height) => Math.max(0, Number(height) || 0))
+    : [];
+  return {
+    revision: String(geometry.revision ?? ""),
+    pageHeightsPoints,
+    totalHeightPoints: pageHeightsPoints.reduce((total, height) => total + height, 0),
+  };
 }
 
 export function setStatus(id: string, status: SessionStatus): SessionState | undefined {

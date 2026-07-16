@@ -16,19 +16,18 @@ import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getPageDwellMs } from "@/lib/playback";
 import {
+  DOCUMENT_SPEED_PRESETS,
+  DOCUMENT_SPEED_DEFAULT,
+  DOCUMENT_SPEED_STEP,
   SPEED_MAX,
   SPEED_MIN,
-  calculateSpeedFromBpm,
+  calculateDocumentSpeedFromBpm,
+  clampDocumentSpeed,
   deriveBpmFromTaps,
-  screensPerMinuteToSpeed,
-  speedToScreensPerMinute,
-  speedToSecondsPerScreen,
 } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import type { SessionState } from "@/types/session";
 
-const SCREEN_SPEED_PRESETS = [1, 3, 5, 7];
-const SCREEN_SPEED_STEP = 0.25;
 const PAGE_SECONDS_STEP = 1;
 
 const BEATS_PRESETS = [
@@ -45,7 +44,6 @@ type Props = {
   session: SessionState;
   liveProgress: number;
   numPages: number;
-  scrollableScreens: number | null;
   hidePrimaryControlsOnDesktop?: boolean;
   onPlay: () => void;
   onPause: () => void;
@@ -67,7 +65,6 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     session,
     liveProgress,
     numPages,
-    scrollableScreens,
     hidePrimaryControlsOnDesktop = false,
     onPlay,
     onPause,
@@ -81,44 +78,29 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
   ref
 ) {
   const { t } = useI18n();
-  const [screensPerSong, setScreensPerSong] = useState<string>("3.0");
+  const [documentPointsPerSong, setDocumentPointsPerSong] = useState<string>("1000");
   const [beatsPerSong, setBeatsPerSong] = useState<number>(BEATS_PRESETS[1].value);
   const [bpm, setBpm] = useState<number | null>(null);
   const [pulse, setPulse] = useState(false);
   const [acceptedBpm, setAcceptedBpm] = useState<number | null>(null);
 
-  const speedRef = useRef(session.speed);
+  const speedRef = useRef(session.playbackMode === "scroll" ? session.scrollVelocityPointsPerSecond ?? DOCUMENT_SPEED_DEFAULT : session.speed);
   useEffect(() => {
-    speedRef.current = session.speed;
-  }, [session.speed]);
+    speedRef.current = session.playbackMode === "scroll" ? session.scrollVelocityPointsPerSecond ?? DOCUMENT_SPEED_DEFAULT : session.speed;
+  }, [session.playbackMode, session.scrollVelocityPointsPerSecond, session.speed]);
 
   const tapsRef = useRef<number[]>([]);
   const lastAppliedRef = useRef<number>(0);
 
-  const canControlScrollTempo =
-    session.playbackMode === "scroll" &&
-    scrollableScreens !== null &&
-    Number.isFinite(scrollableScreens) &&
-    scrollableScreens > 0;
-  const currentScreensPerMinute = canControlScrollTempo
-    ? speedToScreensPerMinute(session.speed, scrollableScreens)
-    : null;
-  const currentSecondsPerScreen = canControlScrollTempo
-    ? speedToSecondsPerScreen(session.speed, scrollableScreens)
+  const canControlScrollTempo = session.playbackMode === "scroll" && Boolean(session.documentGeometry);
+  const currentDocumentSpeed = canControlScrollTempo
+    ? clampDocumentSpeed(session.scrollVelocityPointsPerSecond ?? DOCUMENT_SPEED_DEFAULT)
     : null;
   const pageDwellMs =
     session.playbackMode === "page" && numPages > 0 ? getPageDwellMs(session.speed, numPages) : null;
   const currentSecondsPerPage =
     pageDwellMs === null ? null : pageDwellMs / 1000;
 
-  const minScreensPerMinute =
-    scrollableScreens !== null && scrollableScreens > 0
-      ? speedToScreensPerMinute(SPEED_MIN, scrollableScreens)
-      : null;
-  const maxScreensPerMinute =
-    scrollableScreens !== null && scrollableScreens > 0
-      ? speedToScreensPerMinute(SPEED_MAX, scrollableScreens)
-      : null;
   const minSecondsPerPage =
     session.playbackMode === "page" && numPages > 0
       ? (getPageDwellMs(SPEED_MAX, numPages) ?? 0) / 1000
@@ -130,16 +112,16 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
 
   const speedDisplay =
     session.playbackMode === "scroll"
-      ? currentScreensPerMinute !== null
-        ? `${currentScreensPerMinute.toFixed(1)} ${t("controls.screensPerMinuteUnit")}`
+      ? currentDocumentSpeed !== null
+        ? `${currentDocumentSpeed} ${t("controls.documentPointsPerSecondUnit")}`
         : t("controls.scrollTempoUnavailable")
       : currentSecondsPerPage !== null
         ? `${currentSecondsPerPage.toFixed(1)} ${t("controls.secondsPerPageUnit")}`
         : t("controls.scrollTempoUnavailable");
   const speedHelper =
     session.playbackMode === "scroll"
-      ? currentSecondsPerScreen !== null
-        ? `${t("controls.approxPrefix")} ${currentSecondsPerScreen.toFixed(1)} ${t("controls.secondsPerScreenUnit")}`
+      ? currentDocumentSpeed !== null
+        ? t("controls.documentSpeedHint")
         : t("controls.loadDocumentFirst")
       : currentSecondsPerPage !== null
         ? `${t("controls.approxPrefix")} ${currentSecondsPerPage.toFixed(1)} ${t("controls.secondsPerPageUnit")}`
@@ -151,11 +133,9 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     if (!fromTap) setAcceptedBpm(null);
   }
 
-  function applyScreensPerMinute(value: number, fromTap = false) {
-    if (!canControlScrollTempo || scrollableScreens === null) return;
-    const rawSpeed = screensPerMinuteToSpeed(value, scrollableScreens);
-    if (rawSpeed <= 0) return;
-    applyRawSpeed(rawSpeed, fromTap);
+  function applyDocumentSpeed(value: number, fromTap = false) {
+    if (!canControlScrollTempo) return;
+    applyRawSpeed(clampDocumentSpeed(value), fromTap);
   }
 
   function applySecondsPerPage(value: number) {
@@ -165,14 +145,8 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
   }
 
   function nudgeScrollTempo(delta: number) {
-    if (currentScreensPerMinute === null || minScreensPerMinute === null || maxScreensPerMinute === null) {
-      return;
-    }
-    const next = Math.min(
-      maxScreensPerMinute,
-      Math.max(minScreensPerMinute, currentScreensPerMinute + delta)
-    );
-    applyScreensPerMinute(next);
+    if (currentDocumentSpeed === null) return;
+    applyDocumentSpeed(currentDocumentSpeed + delta);
   }
 
   function nudgePageTempo(deltaSeconds: number) {
@@ -185,7 +159,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
   }
 
   function handleTap() {
-    if (!canControlScrollTempo || scrollableScreens === null) return;
+    if (!canControlScrollTempo) return;
 
     const now = Date.now();
     const taps = tapsRef.current;
@@ -206,11 +180,10 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     setBpm(detectedBpm);
 
     if (taps.length >= TAP_MIN_TAPS && now - lastAppliedRef.current >= TAP_COOLDOWN_MS) {
-      const speed = calculateSpeedFromBpm({
+      const speed = calculateDocumentSpeedFromBpm({
         detectedBpm,
-        screensPerSong: Number(screensPerSong),
+        documentPointsPerSong: Number(documentPointsPerSong),
         beatsPerSong,
-        scrollableScreens,
       });
       if (speed > 0) {
         applyRawSpeed(speed, true);
@@ -236,17 +209,9 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
     };
   }, [acceptedBpm]);
 
-  const activePreset = SCREEN_SPEED_PRESETS.find(
-    (value) => currentScreensPerMinute !== null && Math.abs(value - currentScreensPerMinute) < 0.25
+  const activePreset = DOCUMENT_SPEED_PRESETS.find(
+    (value) => currentDocumentSpeed !== null && value === currentDocumentSpeed
   );
-  const currentPresetIndex =
-    currentScreensPerMinute === null
-      ? null
-      : SCREEN_SPEED_PRESETS.reduce((bestIndex, value, index) => {
-          const bestDistance = Math.abs(SCREEN_SPEED_PRESETS[bestIndex] - currentScreensPerMinute);
-          const distance = Math.abs(value - currentScreensPerMinute);
-          return distance < bestDistance ? index : bestIndex;
-        }, 0);
   const currentPage = Math.min(Math.max(session.currentPage, 1), Math.max(numPages, 1));
   const progressLabel =
     session.playbackMode === "scroll"
@@ -285,8 +250,8 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
           </div>
 
           <Badge variant="outline">
-            {session.playbackMode === "scroll" && currentPresetIndex !== null
-              ? `${SCREEN_SPEED_PRESETS[currentPresetIndex].toFixed(0)} ${t("controls.screensPerMinuteShort")}`
+            {session.playbackMode === "scroll" && activePreset !== undefined
+              ? `${activePreset} ${t("controls.documentPointsPerSecondUnit")}`
               : speedDisplay}
           </Badge>
         </div>
@@ -343,13 +308,13 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                   aria-label={t("controls.quickTempo")}
                   className="inline-flex rounded-xl bg-muted p-1"
                 >
-                  {SCREEN_SPEED_PRESETS.map((value) => (
+                  {DOCUMENT_SPEED_PRESETS.map((value, index) => (
                     <button
                       key={value}
                       type="button"
-                      onClick={() => applyScreensPerMinute(value)}
+                      onClick={() => applyDocumentSpeed(value)}
                       disabled={!canControlScrollTempo}
-                      aria-label={`${t("controls.speed")} ${value}`}
+                      aria-label={`${t("controls.speed")} ${value} ${t("controls.documentPointsPerSecondUnit")}`}
                       aria-pressed={activePreset === value}
                       className={cn(
                         "min-w-11 rounded-lg px-2 py-2 text-sm font-semibold tabular-nums transition-colors",
@@ -359,7 +324,7 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                         !canControlScrollTempo && "cursor-not-allowed opacity-50"
                       )}
                     >
-                      {value}
+                      {[1, 3, 5, 7][index]}
                     </button>
                   ))}
                 </div>
@@ -373,20 +338,20 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
                     variant="ghost"
                     size="icon"
                     className="size-9"
-                    onClick={() => nudgeScrollTempo(-SCREEN_SPEED_STEP)}
+                    onClick={() => nudgeScrollTempo(-DOCUMENT_SPEED_STEP)}
                     disabled={!canControlScrollTempo}
                     aria-label={t("controls.slower")}
                   >
                     <Minus className="size-4" />
                   </Button>
                   <span className="min-w-[7rem] text-center text-sm font-semibold tabular-nums">
-                    {currentScreensPerMinute !== null ? currentScreensPerMinute.toFixed(1) : "—"}
+                    {currentDocumentSpeed !== null ? currentDocumentSpeed : "—"}
                   </span>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="size-9"
-                    onClick={() => nudgeScrollTempo(SCREEN_SPEED_STEP)}
+                    onClick={() => nudgeScrollTempo(DOCUMENT_SPEED_STEP)}
                     disabled={!canControlScrollTempo}
                     aria-label={t("controls.faster")}
                   >
@@ -507,19 +472,19 @@ export const PlaybackControls = forwardRef<PlaybackControlsHandle, Props>(functi
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex min-w-[9rem] flex-col gap-1">
                 <label
-                  htmlFor="screensPerSong"
+                  htmlFor="documentPointsPerSong"
                   className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
                 >
-                  {t("controls.screensPerSong")}
+                  {t("controls.documentPointsPerSong")}
                 </label>
                 <Input
-                  id="screensPerSong"
+                  id="documentPointsPerSong"
                   type="number"
-                  min={0.1}
-                  step={0.1}
+                  min={1}
+                  step={1}
                   inputMode="decimal"
-                  value={screensPerSong}
-                  onChange={(e) => setScreensPerSong(e.target.value)}
+                  value={documentPointsPerSong}
+                  onChange={(e) => setDocumentPointsPerSong(e.target.value)}
                   disabled={!canControlScrollTempo}
                   className="h-10"
                 />

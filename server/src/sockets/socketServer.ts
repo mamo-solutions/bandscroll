@@ -3,6 +3,8 @@ import { Server, type Socket } from "socket.io";
 import type { RequestHandler } from "express";
 import {
   clampCurrentPage,
+  CANONICAL_SCROLL_VELOCITY_DEFAULT,
+  clampCanonicalScrollVelocity,
   decrementClientCount,
   getSessionByCode,
   getSessionById,
@@ -12,7 +14,7 @@ import {
   clampProgress,
   type SessionPatch,
 } from "../sessionStore.js";
-import type { SessionState } from "../types.js";
+import type { SessionState, SyncSnapshot } from "../types.js";
 import { logger } from "../lib/logger.js";
 import { metrics } from "../lib/metrics.js";
 import type { MarkerGenerationSocketEvent } from "../ai/types.js";
@@ -20,7 +22,12 @@ import {
   nextPlaybackPatch,
   pageStartProgress,
 } from "../lib/sessionPlayback.js";
+import { cursorAtPageStart, maxCursorMicroPoints, pageForDocumentCursor } from "../lib/documentPosition.js";
 import { isAllowedSocketOrigin } from "../security/origin.js";
+import { readSessionDocumentGeometry } from "../ai/documentAnalysis.js";
+import { applyCanonicalControl, type CanonicalControlCommand } from "../lib/sessionControl.js";
+import { createSyncSnapshot, materializeDocumentCursor } from "../lib/syncSnapshot.js";
+import { RUNTIME_MANIFEST } from "../runtimeManifest.js";
 
 const log = logger.child("socket");
 
@@ -30,15 +37,70 @@ const PLAYBACK_LOOP_MS = 250;
 const PLAYBACK_SCROLL_TICK_MS = 250;
 const PLAYBACK_PAGE_TICK_MS = 500;
 const lastPlaybackTickAt = new Map<string, number>();
+const positionSequenceBySession = new Map<string, number>();
+const controllerBySession = new Map<string, { socketId: string; expiresAt: number }>();
+const CONTROLLER_LEASE_MS = 15_000;
 const ADMIN_ROOM = "admins";
 
 function roomFor(code: string): string {
   return `session:${code}`;
 }
 
+function nextPositionSequence(sessionId: string): number {
+  const next = (positionSequenceBySession.get(sessionId) ?? 0) + 1;
+  positionSequenceBySession.set(sessionId, next);
+  return next;
+}
+
+function snapshotForSession(session: SessionState, now = Date.now()): SyncSnapshot {
+  return createSyncSnapshot(session, nextPositionSequence(session.id), now);
+}
+
 function emitSessionState(socket: Socket, session: SessionState): void {
   metrics.recordSessionStateBroadcast();
-  socket.emit("session-state", session);
+  socket.emit("session-state", snapshotForSession(session));
+}
+
+function hydrateCanonicalGeometry(session: SessionState): void {
+  if (session.documentGeometry || !session.pdfUrl) return;
+  void readSessionDocumentGeometry(session)
+    .then((geometry) => {
+      if (!geometry) return;
+      const anchor = session.scrollAnchor;
+      const pageIndex = anchor ? Math.max(0, Math.min(geometry.pageHeightsPoints.length - 1, anchor.page - 1)) : 0;
+      const beforePage = geometry.pageHeightsPoints.slice(0, pageIndex).reduce((sum, height) => sum + height, 0);
+      // Legacy conversion happens exactly once during migration; runtime state
+      // thereafter never uses a percentage or viewport-derived value.
+      const legacyPoints = anchor
+        ? beforePage + geometry.pageHeightsPoints[pageIndex] * anchor.fraction
+        : geometry.totalHeightPoints * session.progress;
+      const updated = updateSessionState(session.id, {
+        documentGeometry: geometry,
+        documentCursor: { revision: geometry.revision, yMicroPoints: Math.round(legacyPoints * 1_000) },
+        scrollVelocityPointsPerSecond: CANONICAL_SCROLL_VELOCITY_DEFAULT,
+        positionUpdatedAt: Date.now(),
+        playing: false,
+      });
+      if (updated) broadcastSessionState(updated);
+    })
+    .catch((err) => log.warn("document geometry migration failed", { sessionId: session.id, err }));
+}
+
+/** Materialize an older velocity before applying the current safe range. */
+function enforceCanonicalScrollVelocity(session: SessionState): SessionState {
+  if (!session.documentGeometry || !session.documentCursor) return session;
+  const currentVelocity = session.scrollVelocityPointsPerSecond ?? CANONICAL_SCROLL_VELOCITY_DEFAULT;
+  const clampedVelocity = clampCanonicalScrollVelocity(currentVelocity);
+  if (currentVelocity === clampedVelocity) return session;
+
+  const now = Date.now();
+  return (
+    updateSessionState(session.id, {
+      documentCursor: materializeDocumentCursor(session, now),
+      positionUpdatedAt: now,
+      scrollVelocityPointsPerSecond: clampedVelocity,
+    }) ?? session
+  );
 }
 
 type AdminPlaybackControlPayload =
@@ -87,6 +149,24 @@ function isAdminSocket(socket: Socket): boolean {
   return req.session?.isAdmin === true;
 }
 
+function claimController(socket: Socket, sessionId: string): boolean {
+  const controller = controllerBySession.get(sessionId);
+  if (!controller || controller.expiresAt <= Date.now() || controller.socketId === socket.id) {
+    controllerBySession.set(sessionId, { socketId: socket.id, expiresAt: Date.now() + CONTROLLER_LEASE_MS });
+    return true;
+  }
+  socket.emit("admin-error", { error: "controller-active" });
+  return false;
+}
+
+function rejectsLegacyScrollControl(socket: Socket, sessionId: string): boolean {
+  const session = getSessionById(sessionId);
+  if (!session || session.playbackMode !== "scroll" || !session.documentGeometry) return false;
+  socket.emit("admin-error", { error: "canonical-scroll-command-required" });
+  emitSessionState(socket, session);
+  return true;
+}
+
 export function initSocketServer(
   httpServer: HttpServer,
   sessionMiddleware: RequestHandler
@@ -104,6 +184,22 @@ export function initSocketServer(
 
   // Share the express-session middleware so socket.request.session is populated.
   io.engine.use(sessionMiddleware);
+  io.use((socket, next) => {
+    const runtime = socket.handshake.auth as { syncProtocol?: unknown; buildId?: unknown };
+    if (
+      runtime.syncProtocol === RUNTIME_MANIFEST.syncProtocol &&
+      runtime.buildId === RUNTIME_MANIFEST.buildId
+    ) {
+      next();
+      return;
+    }
+
+    const error = new Error("client-update-required") as Error & {
+      data: typeof RUNTIME_MANIFEST;
+    };
+    error.data = RUNTIME_MANIFEST;
+    next(error);
+  });
 
   if (!playbackTimer) {
     playbackTimer = setInterval(() => {
@@ -114,6 +210,27 @@ export function initSocketServer(
         const lastTickAt = lastPlaybackTickAt.get(session.id) ?? 0;
         if (now - lastTickAt < cadenceMs) continue;
         lastPlaybackTickAt.set(session.id, now);
+
+        if (session.playbackMode === "scroll" && session.documentGeometry && session.documentCursor) {
+          const cursor = materializeDocumentCursor(session, now);
+          if (!cursor) continue;
+          const autoStopCursor = nextCanonicalAutoStopCursor(session, cursor);
+          if (autoStopCursor || cursor.yMicroPoints >= maxCursorMicroPoints(session.documentGeometry)) {
+            const terminalCursor = autoStopCursor ?? cursor;
+            const updated = updateSessionState(session.id, {
+              documentCursor: terminalCursor,
+              positionUpdatedAt: now,
+              currentPage: pageForDocumentCursor(terminalCursor, session.documentGeometry),
+              playing: false,
+            });
+            if (updated) broadcastSessionState(updated);
+          } else if (session.playing && (session.scrollVelocityPointsPerSecond ?? 0) > 0) {
+            // Canonical playback snapshots are deliberately ephemeral. Persisting
+            // every tick causes storage latency and makes state versions churn.
+            broadcastSessionState(session, now);
+          }
+          continue;
+        }
 
         const patch = nextPlaybackPatch(session, now);
         if (!patch) continue;
@@ -128,6 +245,7 @@ export function initSocketServer(
         playbackTimer = null;
       }
       lastPlaybackTickAt.clear();
+      positionSequenceBySession.clear();
     });
   }
 
@@ -169,11 +287,13 @@ export function initSocketServer(
     // ---- Public client events ----
     socket.on("join-session", (code: string) => {
       metrics.recordSocketEvent("join-session");
-      const session = getSessionByCode(String(code ?? ""));
+      let session = getSessionByCode(String(code ?? ""));
       if (!session) {
         socket.emit("session-not-found", { code });
         return;
       }
+      hydrateCanonicalGeometry(session);
+      session = enforceCanonicalScrollVelocity(session);
       leaveCurrent();
       socket.join(roomFor(session.code));
       joinedSessionId = session.id;
@@ -224,11 +344,12 @@ export function initSocketServer(
 
     socket.on("admin-join-session", (sessionId: string) => {
       if (!guardAdmin("admin-join-session")) return;
-      const session = getSessionById(String(sessionId ?? ""));
+      let session = getSessionById(String(sessionId ?? ""));
       if (!session) {
         socket.emit("session-not-found", { id: sessionId });
         return;
       }
+      session = enforceCanonicalScrollVelocity(session);
       socket.join(roomFor(session.code));
       emitSessionState(socket, session);
       log.info("admin join", { id: socket.id, code: session.code });
@@ -237,6 +358,7 @@ export function initSocketServer(
     socket.on("admin-play", (payload: AdminPlaybackControlPayload) => {
       if (!guardAdmin("admin-play")) return;
       const sessionId = playbackControlSessionId(payload);
+      if (rejectsLegacyScrollControl(socket, sessionId)) return;
       adminUpdate(sessionId, { playing: true, status: "live", ...playbackControlPatch(payload) });
       log.info("admin play", { id: socket.id, sessionId });
     });
@@ -244,12 +366,14 @@ export function initSocketServer(
     socket.on("admin-pause", (payload: AdminPlaybackControlPayload) => {
       if (!guardAdmin("admin-pause")) return;
       const sessionId = playbackControlSessionId(payload);
+      if (rejectsLegacyScrollControl(socket, sessionId)) return;
       adminUpdate(sessionId, { playing: false, ...playbackControlPatch(payload) });
       log.info("admin pause", { id: socket.id, sessionId });
     });
 
     socket.on("admin-stop", (sessionId: string) => {
       if (!guardAdmin("admin-stop")) return;
+      if (rejectsLegacyScrollControl(socket, String(sessionId))) return;
       adminUpdate(String(sessionId), {
         playing: false,
         progress: 0,
@@ -267,6 +391,7 @@ export function initSocketServer(
         scrollAnchor?: { page: number; fraction: number };
       }) => {
         if (!guardAdmin("admin-seek")) return;
+        if (rejectsLegacyScrollControl(socket, String(payload?.sessionId))) return;
         const patch: Parameters<typeof updateSessionState>[1] = {
           progress: clampProgress(Number(payload?.progress)),
         };
@@ -286,33 +411,37 @@ export function initSocketServer(
       }
     );
 
+    // Positions are never accepted as a browser heartbeat. A conductor sends
+    // discrete cursor commands with the immutable PDF revision it observed.
+    socket.on("admin-sync", () => {
+      socket.emit("admin-error", { error: "admin-sync-retired" });
+    });
+
     socket.on(
-      "admin-sync",
-      (payload: {
-        sessionId: string;
-        progress: number;
-        scrollAnchor?: { page: number; fraction: number };
-      }) => {
-        if (!guardAdmin("admin-sync")) return;
-        const patch: Parameters<typeof updateSessionState>[1] = {
-          progress: clampProgress(Number(payload?.progress)),
-        };
-        if (
-          payload?.scrollAnchor &&
-          Number.isFinite(payload.scrollAnchor.page) &&
-          Number.isFinite(payload.scrollAnchor.fraction)
-        ) {
-          patch.scrollAnchor = payload.scrollAnchor;
+      "admin-control",
+      (payload: { sessionId: string } & CanonicalControlCommand) => {
+        if (!guardAdmin("admin-control")) return;
+        const sessionId = String(payload?.sessionId);
+        if (!claimController(socket, sessionId)) return;
+        const session = getSessionById(sessionId);
+        if (!session) {
+          socket.emit("session-not-found", { id: sessionId });
+          return;
         }
-        adminUpdate(String(payload?.sessionId), patch);
-        log.debug("admin sync", {
-          id: socket.id,
-          sessionId: String(payload?.sessionId),
-          progress: patch.progress,
-          scrollAnchor: patch.scrollAnchor,
-        });
+        const result = applyCanonicalControl(session, payload);
+        if ("error" in result) {
+          socket.emit("admin-error", { error: result.error, session });
+          emitSessionState(socket, session);
+          return;
+        }
+        adminUpdate(session.id, result.patch);
       }
     );
+
+    socket.on("admin-control-lease", (sessionId: string) => {
+      if (!guardAdmin("admin-control-lease")) return;
+      claimController(socket, String(sessionId));
+    });
 
     socket.on(
       "admin-set-playback-mode",
@@ -397,10 +526,14 @@ export function initSocketServer(
 
     socket.on(
       "admin-set-speed",
-      (payload: { sessionId: string; speed: number }) => {
+      (payload: { sessionId: string; speed: number; velocityPointsPerSecond?: number }) => {
         if (!guardAdmin("admin-set-speed")) return;
         const speed = Math.max(0, Number(payload?.speed) || 0);
-        adminUpdate(String(payload?.sessionId), { speed });
+        const velocityPointsPerSecond = Math.max(0, Number(payload?.velocityPointsPerSecond) || 0);
+        adminUpdate(String(payload?.sessionId), {
+          speed,
+          ...(velocityPointsPerSecond > 0 ? { scrollVelocityPointsPerSecond: velocityPointsPerSecond } : {}),
+        });
         log.info("admin set-speed", {
           id: socket.id,
           sessionId: String(payload?.sessionId),
@@ -450,6 +583,9 @@ export function initSocketServer(
     );
 
     socket.on("disconnect", (reason: string) => {
+      for (const [sessionId, controllerId] of controllerBySession) {
+        if (controllerId.socketId === socket.id) controllerBySession.delete(sessionId);
+      }
       leaveCurrent();
       log.info("disconnect", { id: socket.id, reason, total: metrics.decSocket() });
     });
@@ -463,9 +599,25 @@ export function getIo(): Server {
   return io;
 }
 
-export function broadcastSessionState(session: SessionState): void {
+function nextCanonicalAutoStopCursor(
+  session: SessionState,
+  cursor: NonNullable<SessionState["documentCursor"]>
+): NonNullable<SessionState["documentCursor"]> | undefined {
+  if (!session.autoStopAtSongEnd || !session.documentGeometry) return undefined;
+
+  let boundary: NonNullable<SessionState["documentCursor"]> | undefined;
+  for (const marker of session.markers) {
+    const markerCursor = cursorAtPageStart(marker.page, session.documentGeometry);
+    if (markerCursor.yMicroPoints <= session.documentCursor!.yMicroPoints) continue;
+    if (markerCursor.yMicroPoints > cursor.yMicroPoints) continue;
+    if (!boundary || markerCursor.yMicroPoints < boundary.yMicroPoints) boundary = markerCursor;
+  }
+  return boundary;
+}
+
+export function broadcastSessionState(session: SessionState, now = Date.now()): void {
   metrics.recordSessionStateBroadcast();
-  io?.to(roomFor(session.code)).emit("session-state", session);
+  io?.to(roomFor(session.code)).emit("session-state", snapshotForSession(session, now));
 }
 
 export function broadcastSessionEnded(session: SessionState): void {

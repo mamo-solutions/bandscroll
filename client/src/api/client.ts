@@ -51,6 +51,7 @@ export class ApiError extends Error {
 // ---- Public ----
 export const api = {
   health: () => request<{ ok: boolean }>("/api/health"),
+  runtime: () => request<{ syncProtocol: number; buildId: string }>("/api/runtime"),
   publicSessions: () => request<SessionState[]>("/api/sessions/public"),
   sessionByCode: (code: string) =>
     request<SessionState>(`/api/sessions/code/${encodeURIComponent(code)}`),

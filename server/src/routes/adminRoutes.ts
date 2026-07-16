@@ -47,6 +47,7 @@ import {
   saveAiProviderConfig,
   testAiProviderConfig,
 } from "../ai/service.js";
+import { readDocumentGeometry } from "../ai/documentAnalysis.js";
 
 export const adminRouter = Router();
 const markerGenerationService = new MarkerGenerationService();
@@ -423,12 +424,26 @@ adminRouter.post(
     const oldPdfUrl = session.pdfUrl;
     // A new document means a new song: reset to the top and pause so viewers
     // don't keep extrapolating the previous song's scroll position.
+    let documentGeometry;
+    try {
+      documentGeometry = await readDocumentGeometry(req.file.path);
+    } catch (err) {
+      logger.warn("upload geometry extraction failed", { path: req.file.path, err });
+    }
     const patch: Parameters<typeof updateSessionState>[1] = {
       pdfUrl,
       progress: 0,
       currentPage: 1,
       numPages: 0,
       playing: false,
+      documentGeometry,
+      documentCursor: documentGeometry
+        ? { revision: documentGeometry.revision, yMicroPoints: 0 }
+        : undefined,
+      // Stable default in PDF user-space points per second. It is independent
+      // of the admin's viewport and is replaced by explicit tempo commands.
+      scrollVelocityPointsPerSecond: 36,
+      positionUpdatedAt: Date.now(),
     };
     if (documentDescription !== undefined || req.file.mimetype.startsWith("image/")) {
       patch.documentDescription = documentDescription;

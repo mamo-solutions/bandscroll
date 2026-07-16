@@ -13,12 +13,17 @@ import type { SessionState } from "../types.js";
 
 function makePngBytes(): Buffer {
   const canvas = createCanvas(32, 32);
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#f7c38a";
-  ctx.fillRect(0, 0, 32, 32);
-  ctx.fillStyle = "#7e3f2d";
-  ctx.fillRect(6, 6, 20, 20);
-  return canvas.toBuffer("image/png");
+  try {
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#f7c38a";
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.fillStyle = "#7e3f2d";
+    ctx.fillRect(6, 6, 20, 20);
+    return canvas.toBuffer("image/png");
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
 function makePdfBytes(): Buffer {

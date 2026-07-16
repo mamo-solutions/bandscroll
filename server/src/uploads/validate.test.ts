@@ -25,13 +25,24 @@ describe("validateUploadFile", () => {
   });
 
   it("accepts PNG and rejects PNG mimetype on HTML", () => {
-    const png = write("img.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const png = write(
+      "img.png",
+      Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      ])
+    );
     expect(validateUploadFile(png, "image/png")).toBe(true);
     rmSync(png, { force: true });
 
     const html = write("img.png", "<html></html>");
     expect(validateUploadFile(html, "image/png")).toBe(false);
     rmSync(html, { force: true });
+
+    const truncated = write("truncated.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]));
+    expect(validateUploadFile(truncated, "image/png")).toBe(false);
+    rmSync(truncated, { force: true });
   });
 
   it("accepts JPEG signatures", () => {

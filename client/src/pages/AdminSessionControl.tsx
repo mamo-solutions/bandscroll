@@ -21,7 +21,6 @@ import { AdminSessionSetupPanel } from "@/components/AdminSessionSetupPanel";
 import {
   PdfViewer,
   type PdfViewerHandle,
-  type PdfViewerScrollMetrics,
 } from "@/components/PdfViewer";
 import { PlaybackControls, type PlaybackControlsHandle } from "@/components/PlaybackControls";
 import { useHeaderSlot } from "@/components/HeaderSlot";
@@ -51,11 +50,11 @@ import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
-  DEFAULT_SCROLL_SCREENS_PER_MINUTE,
+  DOCUMENT_SPEED_DEFAULT,
+  DOCUMENT_SPEED_STEP,
   SPEED_MAX,
   SPEED_MIN,
-  screensPerMinuteToSpeed,
-  speedToScreensPerMinute,
+  clampDocumentSpeed,
 } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
@@ -67,6 +66,7 @@ import type {
 } from "@/types/ai";
 import {
   clamp01,
+  effectiveDocumentCursor,
   type PlaybackMode,
   type SessionBackgroundMode,
   type SessionState,
@@ -89,7 +89,6 @@ export function AdminSessionControl() {
   const [markerGenerationAvailable, setMarkerGenerationAvailable] = useState(false);
   const [markerSuggestionSet, setMarkerSuggestionSet] = useState<MarkerSuggestionSet | null>(null);
   const [generatingMarkers, setGeneratingMarkers] = useState(false);
-  const [scrollMetrics, setScrollMetrics] = useState<PdfViewerScrollMetrics | null>(null);
   const [shortcutBindings, setShortcutBindings] = useState<AdminShortcutBindings>(() =>
     loadShortcutBindings()
   );
@@ -99,20 +98,17 @@ export function AdminSessionControl() {
   const stateRef = useRef<SessionState | null>(null);
   const liveProgressRef = useRef(0);
   const numPagesRef = useRef(0);
-  const scrollMetricsRef = useRef<PdfViewerScrollMetrics | null>(null);
   const reportedNumPagesRef = useRef<number | null>(null);
-  const normalizedTempoKeyRef = useRef<string | null>(null);
   const lastWallRef = useRef<number>(Date.now());
   // Set true when scroll-mode auto-stop has fired; suppresses further advance
   // until the authoritative paused state arrives back via session-state.
   const autoStopEngagedRef = useRef(false);
-  const lastAnchorBroadcastAtRef = useRef(0);
   const markerRepairSignatureRef = useRef<string | null>(null);
   const markerRepairInFlightRef = useRef(false);
+  const cursorCommandInFlightRef = useRef(false);
   const pdfInput = useRef<HTMLInputElement>(null);
 
-  const KB_SCREENS_STEP = 0.5;
-  const FACTORY_SPEED = 0.0002;
+  const KB_DOCUMENT_SPEED_STEP = DOCUMENT_SPEED_STEP;
   const socket = getSocket();
   const socketStatus = useSocketStatus();
 
@@ -149,14 +145,6 @@ export function AdminSessionControl() {
   useEffect(() => {
     numPagesRef.current = numPages;
   }, [numPages]);
-
-  useEffect(() => {
-    scrollMetricsRef.current = scrollMetrics;
-  }, [scrollMetrics]);
-
-  useEffect(() => {
-    if (!session?.pdfUrl) setScrollMetrics(null);
-  }, [session?.pdfUrl]);
 
   useEffect(() => {
     const currentSession = stateRef.current;
@@ -250,9 +238,13 @@ export function AdminSessionControl() {
 
     const onState = (nextSession: SessionState) => {
       if (nextSession.id !== id) return;
+      cursorCommandInFlightRef.current = false;
       stateRef.current = nextSession;
       setSession(nextSession);
       if (nextSession.playbackMode === "scroll") {
+        if (nextSession.documentCursor && nextSession.documentGeometry) {
+          viewerRef.current?.scrollToDocumentCursor(nextSession.documentCursor, nextSession.documentGeometry);
+        }
         // While auto-stop is engaged but the authoritative pause hasn't landed
         // yet, keep progress pinned at the stop point instead of chasing a late
         // still-playing tick past the boundary.
@@ -274,7 +266,15 @@ export function AdminSessionControl() {
         lastWallRef.current = Date.now();
       }
     };
-    const onError = (e: { error: string }) => reportError("admin.socket", e?.error);
+    const onError = (e: { error: string }) => {
+      cursorCommandInFlightRef.current = false;
+      if (e?.error === "control-version-stale") {
+        setErrorMessage("control-version-stale");
+        return;
+      }
+      setErrorMessage(e?.error ?? "control-failed");
+      reportError("admin.socket", e?.error);
+    };
     const onMarkerGenerationUpdated = (payload: MarkerGenerationSocketEvent) => {
       if (payload.sessionId !== id) return;
       setGeneratingMarkers(false);
@@ -320,6 +320,14 @@ export function AdminSessionControl() {
       socket.emit("admin-join-session", id);
     }
   }, [id, socket, socketStatus.state]);
+
+  useEffect(() => {
+    if (socketStatus.state !== "connected" || !session?.documentGeometry) return;
+    const renew = () => socket.emit("admin-control-lease", id);
+    renew();
+    const interval = window.setInterval(renew, 5_000);
+    return () => window.clearInterval(interval);
+  }, [id, session?.documentGeometry, socket, socketStatus.state]);
 
   const { setNode, setHidden, setFooterHidden } = useHeaderSlot();
   useEffect(() => {
@@ -383,6 +391,15 @@ export function AdminSessionControl() {
       const currentSession = stateRef.current;
       const viewer = viewerRef.current;
       if (currentSession && viewer && currentSession.playbackMode === "scroll") {
+        const cursor = effectiveDocumentCursor(
+          currentSession,
+          currentSession.playing ? Date.now() - (currentSession.positionUpdatedAt ?? Date.now()) : 0
+        );
+        if (cursor && currentSession.documentGeometry) {
+          viewer.scrollToDocumentCursor(cursor, currentSession.documentGeometry);
+          raf = requestAnimationFrame(tick);
+          return;
+        }
         if (currentSession.playing) {
           if (!autoStopEngagedRef.current) {
             const prevProgress = liveProgressRef.current;
@@ -390,14 +407,6 @@ export function AdminSessionControl() {
             maybeAutoStopAtSongEnd(prevProgress);
           }
           viewer.scrollToProgress(liveProgressRef.current);
-          const now = Date.now();
-          if (now - lastAnchorBroadcastAtRef.current >= 250) {
-            lastAnchorBroadcastAtRef.current = now;
-            socket.emit("admin-sync", {
-              sessionId: id,
-              progress: liveProgressRef.current,
-            });
-          }
         } else {
           autoStopEngagedRef.current = false;
           liveProgressRef.current = viewer.getCurrentProgress();
@@ -425,35 +434,6 @@ export function AdminSessionControl() {
   }, [id, numPages, patchSession, session?.numPages, session?.pdfUrl, socket]);
 
   useEffect(() => {
-    if (!session?.pdfUrl) {
-      normalizedTempoKeyRef.current = null;
-      return;
-    }
-
-    const normalizationKey = `${session.id}:${session.pdfUrl}`;
-    if (normalizedTempoKeyRef.current === normalizationKey) return;
-    if (session.speed !== FACTORY_SPEED) {
-      normalizedTempoKeyRef.current = normalizationKey;
-      return;
-    }
-
-    const metrics = scrollMetricsRef.current;
-    if (!metrics) return;
-
-    const normalizedSpeed = screensPerMinuteToSpeed(
-      DEFAULT_SCROLL_SCREENS_PER_MINUTE,
-      metrics.scrollableScreens
-    );
-    if (normalizedSpeed <= 0 || Math.abs(normalizedSpeed - session.speed) < 1e-9) {
-      normalizedTempoKeyRef.current = normalizationKey;
-      return;
-    }
-
-    normalizedTempoKeyRef.current = normalizationKey;
-    setSpeed(normalizedSpeed, { persistToMarker: false });
-  }, [session?.id, session?.pdfUrl, session?.speed, scrollMetrics]);
-
-  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!session) return;
       const target = e.target as HTMLElement;
@@ -475,11 +455,11 @@ export function AdminSessionControl() {
           break;
         case "speedUp":
           e.preventDefault();
-          adjustKeyboardSpeed(KB_SCREENS_STEP);
+          adjustKeyboardSpeed(KB_DOCUMENT_SPEED_STEP);
           break;
         case "speedDown":
           e.preventDefault();
-          adjustKeyboardSpeed(-KB_SCREENS_STEP);
+          adjustKeyboardSpeed(-KB_DOCUMENT_SPEED_STEP);
           break;
         case "restart":
           e.preventDefault();
@@ -509,7 +489,7 @@ export function AdminSessionControl() {
     return () => window.removeEventListener("keydown", handler);
   }, [session, shortcutBindings]);
 
-  function adjustKeyboardSpeed(deltaScreensPerMinute: number) {
+  function adjustKeyboardSpeed(delta: number) {
     const currentSession = stateRef.current;
     if (!currentSession) return;
 
@@ -519,7 +499,7 @@ export function AdminSessionControl() {
       const currentSecondsPerPage = dwellMs / 1000;
       const minSecondsPerPage = (getPageDwellMs(SPEED_MAX, Math.max(numPagesRef.current, 1)) ?? 0) / 1000;
       const maxSecondsPerPage = (getPageDwellMs(SPEED_MIN, Math.max(numPagesRef.current, 1)) ?? 0) / 1000;
-      const pageTempoDelta = deltaScreensPerMinute > 0 ? -1 : 1;
+      const pageTempoDelta = delta > 0 ? -1 : 1;
       const nextSecondsPerPage = Math.min(
         maxSecondsPerPage,
         Math.max(minSecondsPerPage, currentSecondsPerPage + pageTempoDelta)
@@ -532,14 +512,31 @@ export function AdminSessionControl() {
       return;
     }
 
-    const metrics = scrollMetricsRef.current;
-    if (!metrics) return;
-    const currentScreensPerMinute = speedToScreensPerMinute(
-      currentSession.speed,
-      metrics.scrollableScreens
-    );
-    const nextScreensPerMinute = Math.max(0.1, currentScreensPerMinute + deltaScreensPerMinute);
-    setSpeed(screensPerMinuteToSpeed(nextScreensPerMinute, metrics.scrollableScreens));
+    if (!currentSession.documentGeometry) return;
+    setSpeed(clampDocumentSpeed((currentSession.scrollVelocityPointsPerSecond ?? DOCUMENT_SPEED_DEFAULT) + delta));
+  }
+
+  function sendCanonicalControl(
+    intent: "resume" | "pause" | "seek" | "restart" | "stop" | "seek-marker" | "set-speed",
+    extras: { cursor?: { revision: string; yMicroPoints: number }; markerId?: string; velocityPointsPerSecond?: number } = {}
+  ) {
+    const current = stateRef.current;
+    if (
+      !current?.documentGeometry ||
+      !current.documentCursor ||
+      cursorCommandInFlightRef.current
+    ) {
+      return;
+    }
+    cursorCommandInFlightRef.current = true;
+    setErrorMessage(null);
+    socket.emit("admin-control", {
+      sessionId: id,
+      intent,
+      revision: current.documentGeometry.revision,
+      expectedControlVersion: current.controlVersion ?? 0,
+      ...extras,
+    });
   }
 
   function play() {
@@ -550,10 +547,8 @@ export function AdminSessionControl() {
     autoStopEngagedRef.current = false;
 
     if (currentSession.playbackMode === "scroll") {
-      const progress = liveProgressRef.current;
-      const scrollAnchor = viewerRef.current?.getScrollAnchor() ?? undefined;
-      patchSession({ playing: true, status: "live", progress, scrollAnchor });
-      socket.emit("admin-play", { sessionId: id, progress, scrollAnchor });
+      sendCanonicalControl("resume");
+      return;
     } else {
       patchSession({
         playing: true,
@@ -572,10 +567,8 @@ export function AdminSessionControl() {
     if (!currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
-      const progress = liveProgressRef.current;
-      const scrollAnchor = viewerRef.current?.getScrollAnchor() ?? undefined;
-      patchSession({ playing: false, progress, scrollAnchor });
-      socket.emit("admin-pause", { sessionId: id, progress, scrollAnchor });
+      sendCanonicalControl("pause");
+      return;
     } else {
       patchSession({ playing: false, currentPage: currentSession.currentPage });
       socket.emit("admin-pause", {
@@ -586,6 +579,10 @@ export function AdminSessionControl() {
   }
 
   function stop() {
+    if (stateRef.current?.playbackMode === "scroll") {
+      sendCanonicalControl("stop");
+      return;
+    }
     socket.emit("admin-stop", id);
     liveProgressRef.current = 0;
     lastWallRef.current = Date.now();
@@ -601,7 +598,7 @@ export function AdminSessionControl() {
     if (!currentSession) return;
 
     if (currentSession.playbackMode === "scroll") {
-      seek(0);
+      sendCanonicalControl("restart");
       return;
     }
 
@@ -618,31 +615,14 @@ export function AdminSessionControl() {
       return;
     }
 
-    seek(viewer.getCurrentProgress());
-  }
-
-  function seek(progress: number) {
-    const currentSession = stateRef.current;
-    if (!currentSession) return;
-
-    const clampedProgress = clamp01(progress);
-    liveProgressRef.current = clampedProgress;
-    lastWallRef.current = Date.now();
-    viewerRef.current?.scrollToProgress(clampedProgress);
-    patchSession({ progress: clampedProgress });
-    setUiProgress(
-      getPlaybackDisplayProgress(
-        currentSession.playbackMode,
-        clampedProgress,
-        currentSession.currentPage,
-        numPages
-      )
-    );
-    socket.emit("admin-seek", {
-      sessionId: id,
-      progress: clampedProgress,
-      scrollAnchor: viewerRef.current?.getScrollAnchor(),
-    });
+    const cursor = currentSession.documentGeometry
+      ? viewer.getDocumentCursor(currentSession.documentGeometry)
+      : null;
+    if (!cursor) {
+      setErrorMessage("document-geometry-unavailable");
+      return;
+    }
+    sendCanonicalControl("seek", { cursor });
   }
 
   function goToPage(page: number) {
@@ -660,16 +640,37 @@ export function AdminSessionControl() {
 
   function setSpeed(speed: number, opts: { persistToMarker?: boolean } = {}) {
     const { persistToMarker = true } = opts;
-    socket.emit("admin-set-speed", { sessionId: id, speed });
-    patchSession({ speed });
+    const isCanonicalScroll =
+      stateRef.current?.playbackMode === "scroll" && Boolean(stateRef.current.documentGeometry);
+    const velocityPointsPerSecond = isCanonicalScroll ? clampDocumentSpeed(speed) : undefined;
+    if (velocityPointsPerSecond !== undefined) {
+      sendCanonicalControl("set-speed", { velocityPointsPerSecond });
+    } else {
+      socket.emit("admin-set-speed", { sessionId: id, speed, velocityPointsPerSecond });
+    }
+    patchSession(
+      velocityPointsPerSecond !== undefined
+        ? { scrollVelocityPointsPerSecond: velocityPointsPerSecond }
+        : { speed }
+    );
 
     // While a song is playing, remember the host's chosen tempo on its marker so
     // it is restored automatically the next time that marker is loaded.
     if (!persistToMarker || !stateRef.current?.playing) return;
     const currentMarker = getCurrentMarker();
-    if (!currentMarker || currentMarker.speed === speed) return;
+    if (!currentMarker) return;
+    const markerSpeed = velocityPointsPerSecond ?? speed;
+    const markerAlreadyMatches =
+      velocityPointsPerSecond !== undefined
+        ? currentMarker.scrollVelocityPointsPerSecond === markerSpeed
+        : currentMarker.speed === markerSpeed;
+    if (markerAlreadyMatches) return;
     const next = (stateRef.current.markers ?? []).map((marker) =>
-      marker.id === currentMarker.id ? { ...marker, speed } : marker
+      marker.id === currentMarker.id
+        ? velocityPointsPerSecond !== undefined
+          ? { ...marker, scrollVelocityPointsPerSecond: markerSpeed }
+          : { ...marker, speed: markerSpeed }
+        : marker
     );
     setMarkers(next);
   }
@@ -822,10 +823,12 @@ export function AdminSessionControl() {
   async function seekToMarker(marker: SongMarker) {
     const currentSession = stateRef.current;
     if (!numPages || marker.page < 1 || marker.page > numPages) return;
-    // Restore the tempo captured for this song, if any, without re-persisting it.
-    if (typeof marker.speed === "number" && marker.speed > 0) {
-      setSpeed(marker.speed, { persistToMarker: false });
+    if (currentSession?.playbackMode === "scroll") {
+      sendCanonicalControl("seek-marker", { markerId: marker.id });
+      return;
     }
+    // Restore the tempo captured for this song, if any, without re-persisting it.
+    if (typeof marker.speed === "number" && marker.speed > 0) setSpeed(marker.speed, { persistToMarker: false });
     const viewer = viewerRef.current;
     const resolvedPage =
       (await viewer?.findMarkerPage(marker.title, Math.max(1, marker.page - 1))) ??
@@ -1113,6 +1116,7 @@ export function AdminSessionControl() {
                     backgroundMode={session.backgroundMode}
                     flush={!distractionFree}
                     edgeToEdge={distractionFree}
+                    documentGeometry={session.documentGeometry}
                     visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
                     onUserScroll={(progress) => {
                       if (stateRef.current?.playing) return;
@@ -1124,7 +1128,11 @@ export function AdminSessionControl() {
                       liveProgressRef.current = progress;
                       setUiProgress(progress);
                     }}
-                    onMetricsChange={setScrollMetrics}
+                    onUserCursor={(cursor) => {
+                      const current = stateRef.current;
+                      if (!current?.documentGeometry || current.playing) return;
+                      sendCanonicalControl("seek", { cursor });
+                    }}
                     onDocumentLoad={setNumPages}
                   />
                 </>
@@ -1258,7 +1266,6 @@ export function AdminSessionControl() {
                 session={session}
                 liveProgress={uiProgress}
                 numPages={numPages}
-                scrollableScreens={scrollMetrics?.scrollableScreens ?? null}
                 hidePrimaryControlsOnDesktop
                 onPlay={play}
                 onPause={pause}

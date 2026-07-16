@@ -7,6 +7,18 @@ export const SPEED_MIN = 0.00001;
 export const SPEED_MAX = 0.25;
 export const DEFAULT_SCROLL_SCREENS_PER_MINUTE = 7;
 
+/** Canonical PDF document speeds. These values never depend on a viewport. */
+export const DOCUMENT_SPEED_PRESETS = [12, 24, 36, 48] as const;
+export const DOCUMENT_SPEED_DEFAULT = 36;
+export const DOCUMENT_SPEED_MIN = 3;
+export const DOCUMENT_SPEED_MAX = 120;
+export const DOCUMENT_SPEED_STEP = 3;
+
+export function clampDocumentSpeed(value: number): number {
+  if (!Number.isFinite(value)) return DOCUMENT_SPEED_MIN;
+  return Math.min(DOCUMENT_SPEED_MAX, Math.max(DOCUMENT_SPEED_MIN, Math.round(value)));
+}
+
 /**
  * Average the gaps between successive tap timestamps and convert to BPM.
  * Returns null when there aren't at least two taps (no interval to measure).
@@ -74,4 +86,23 @@ export function calculateSpeedFromBpm({
   const songDurationSeconds = beatsPerSong / (detectedBpm / 60);
   const screensPerSecond = screensPerSong / songDurationSeconds;
   return screensPerMinuteToSpeed(screensPerSecond * 60, scrollableScreens);
+}
+
+/**
+ * Convert a tapped musical tempo to the canonical PDF distance travelled per
+ * second. The supplied song distance is an intrinsic PDF-point measurement,
+ * so the result is identical on every viewport.
+ */
+export function calculateDocumentSpeedFromBpm({
+  detectedBpm,
+  documentPointsPerSong,
+  beatsPerSong,
+}: {
+  detectedBpm: number;
+  documentPointsPerSong: number;
+  beatsPerSong: number;
+}): number {
+  if (detectedBpm <= 0 || documentPointsPerSong <= 0 || beatsPerSong <= 0) return 0;
+  const songDurationSeconds = beatsPerSong / (detectedBpm / 60);
+  return clampDocumentSpeed(documentPointsPerSong / songDurationSeconds);
 }

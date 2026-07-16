@@ -8,6 +8,8 @@ import {
   screensPerMinuteToSpeed,
   speedToScreensPerMinute,
   speedToSecondsPerScreen,
+  calculateDocumentSpeedFromBpm,
+  clampDocumentSpeed,
 } from "./tempo";
 
 describe("deriveBpmFromTaps", () => {
@@ -117,5 +119,21 @@ describe("screen tempo conversion helpers", () => {
   it("derives seconds per screen from raw speed", () => {
     const rawSpeed = screensPerMinuteToSpeed(6, 10);
     expect(speedToSecondsPerScreen(rawSpeed, 10)).toBeCloseTo(10, 10);
+  });
+});
+
+describe("canonical document tempo helpers", () => {
+  it("derives PDF points per second without viewport input", () => {
+    // 10,000 points over 128 seconds at 120 BPM and 256 beats.
+    expect(calculateDocumentSpeedFromBpm({
+      detectedBpm: 120,
+      documentPointsPerSong: 10_000,
+      beatsPerSong: 256,
+    })).toBe(78);
+  });
+
+  it("clamps document speed to the stable supported range", () => {
+    expect(clampDocumentSpeed(0)).toBe(3);
+    expect(clampDocumentSpeed(999)).toBe(120);
   });
 });

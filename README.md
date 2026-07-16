@@ -166,6 +166,7 @@ only needs to forward one port (`3000`) — including WebSocket upgrades.
 
 ```bash
 cp .env.example .env          # set production values, NODE_ENV=production
+export BUILD_ID="$(node -p \"require('./package.json').version\")+$(git rev-parse HEAD)"
 docker compose up --build
 ```
 
@@ -178,6 +179,10 @@ for PDF uploads. Set `NODE_ENV=production` so the session cookie is marked
 Production deployments assume exactly one trusted reverse proxy hop and do not
 support exposing the Node app port directly to the internet. Keep the app bound
 to a private interface or container network and let the proxy terminate TLS.
+
+Every deployment requires an immutable `BUILD_ID`. The client and server reject
+different build IDs, so deploy the matching client/server release artifacts and
+their `runtime-manifest.json` together. Never reuse a build ID for a new image.
 
 BandScroll is intentionally designed for audience-visible/live-session content.
 Treat uploaded documents for listed or live sessions as visible to anyone with

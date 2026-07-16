@@ -16,6 +16,7 @@ import { resetLoginRateLimitState } from "./security/loginRateLimit.js";
 import { resetAiConfigRateLimitState } from "./security/aiConfigRateLimit.js";
 import { resetMarkerGenerationRateLimitState } from "./security/markerGenerationRateLimit.js";
 import { getIo } from "./sockets/socketServer.js";
+import { RUNTIME_MANIFEST } from "./runtimeManifest.js";
 
 let httpServer: HttpServer;
 let base: string;
@@ -29,14 +30,19 @@ function resetDirectory(dirPath: string): void {
 
 function makePngBytes(): Uint8Array {
   const canvas = createCanvas(48, 48);
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#ffe1c4";
-  ctx.fillRect(0, 0, 48, 48);
-  ctx.fillStyle = "#b95c40";
-  ctx.beginPath();
-  ctx.arc(24, 24, 14, 0, Math.PI * 2);
-  ctx.fill();
-  return new Uint8Array(canvas.toBuffer("image/png"));
+  try {
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffe1c4";
+    ctx.fillRect(0, 0, 48, 48);
+    ctx.fillStyle = "#b95c40";
+    ctx.beginPath();
+    ctx.arc(24, 24, 14, 0, Math.PI * 2);
+    ctx.fill();
+    return new Uint8Array(canvas.toBuffer("image/png"));
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
 function makePdfBytes(): Uint8Array {
@@ -207,6 +213,7 @@ function connect(extraHeaders?: Record<string, string>): Promise<Socket> {
     transports: ["websocket"],
     reconnection: false,
     extraHeaders: sameOriginHeaders(extraHeaders),
+    auth: RUNTIME_MANIFEST,
   });
   return new Promise((resolve, reject) => {
     socket.on("connect", () => resolve(socket));
@@ -1125,7 +1132,7 @@ describe("REST API", () => {
     expect(secondPreview).not.toBe(firstPreview);
   });
 
-  it("falls back to the default image when preview generation fails", async () => {
+  it("rejects a truncated image before native preview rendering", async () => {
     const cookie = await login();
     const { body } = await createSession(cookie, "Broken preview", {
       documentDescription: "Lead sheet cover image",
@@ -1138,17 +1145,13 @@ describe("REST API", () => {
       "broken.png"
     );
     form.append("documentDescription", "Lead sheet cover image");
-    const updated = await json(
-      await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
-        method: "POST",
-        headers: adminHeaders(cookie),
-        body: form,
-      })
-    );
-
-    const sessionPage = await (await fetch(`${base}/session/${updated.code}`)).text();
-    expect(sessionPage).toContain("http://localhost:3000/favicon.svg");
-    expect(sessionPage).not.toContain(`/share-previews/${updated.code}.png?v=`);
+    const uploadRes = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+      body: form,
+    });
+    expect(uploadRes.status).toBe(400);
+    expect((await json(uploadRes)).error).toBe("pdf-content-mismatch");
   });
 });
 
@@ -1267,6 +1270,24 @@ describe("Socket.IO sync", () => {
         rejected.on("connect_error", reject);
       })
     ).rejects.toBeTruthy();
+
+    rejected.close();
+  });
+
+  it("rejects a websocket handshake from an outdated client build", async () => {
+    const rejected = io(base, {
+      transports: ["websocket"],
+      reconnection: false,
+      extraHeaders: sameOriginHeaders(),
+      auth: { ...RUNTIME_MANIFEST, buildId: "outdated-build" },
+    });
+
+    await expect(
+      new Promise((resolve, reject) => {
+        rejected.on("connect", resolve);
+        rejected.on("connect_error", reject);
+      })
+    ).rejects.toMatchObject({ message: "client-update-required" });
 
     rejected.close();
   });

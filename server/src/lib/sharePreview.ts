@@ -4,7 +4,7 @@ import { env } from "../env.js";
 import { logger } from "./logger.js";
 import { extractServedFilename, extractUploadFilename } from "../uploads/cleanup.js";
 import type { SessionState } from "../types.js";
-import type { Image, SKRSContext2D } from "@napi-rs/canvas";
+import type { Canvas, Image, SKRSContext2D } from "@napi-rs/canvas";
 
 const PREVIEW_WIDTH = 1200;
 const PREVIEW_HEIGHT = 630;
@@ -36,6 +36,12 @@ function ensureSharePreviewDir(previewDir: string = env.SHARE_PREVIEW_DIR): void
   if (!existsSync(previewDir)) {
     mkdirSync(previewDir, { recursive: true });
   }
+}
+
+/** Release the native backing store after a preview has been encoded. */
+function releaseCanvas(canvas: Canvas): void {
+  canvas.width = 0;
+  canvas.height = 0;
 }
 
 function baseUrl(baseUrl: string = env.PUBLIC_BASE_URL): string {
@@ -129,11 +135,12 @@ async function renderPdfFirstPage(uploadPath: string): Promise<Buffer> {
     verbosity: 0,
   } as any);
   const pdf = await loadingTask.promise;
+  let canvas: Canvas | undefined;
 
   try {
     const page = await pdf.getPage(1);
     const viewport = page.getViewport({ scale: 2 });
-    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
     const context = canvas.getContext("2d");
 
     await page.render({
@@ -144,6 +151,7 @@ async function renderPdfFirstPage(uploadPath: string): Promise<Buffer> {
 
     return canvas.toBuffer("image/png");
   } finally {
+    if (canvas) releaseCanvas(canvas);
     await loadingTask.destroy();
   }
 }
@@ -384,15 +392,19 @@ export async function generateSessionSharePreview(
 
   const image = await renderSourceImage(session, uploadPath);
   const canvas = createCanvas(PREVIEW_WIDTH, PREVIEW_HEIGHT);
-  const ctx = canvas.getContext("2d");
-  drawPreviewFrame(ctx, session, image);
+  try {
+    const ctx = canvas.getContext("2d");
+    drawPreviewFrame(ctx, session, image);
 
-  const tempPath = tempPreviewFilePath(session.code, previewDir);
-  const finalPath = previewFilePath(session.code, previewDir);
-  writeFileSync(tempPath, canvas.toBuffer("image/png"));
-  writeFileSync(finalPath, readFileSync(tempPath));
-  rmSync(tempPath, { force: true });
-  return true;
+    const tempPath = tempPreviewFilePath(session.code, previewDir);
+    const finalPath = previewFilePath(session.code, previewDir);
+    writeFileSync(tempPath, canvas.toBuffer("image/png"));
+    writeFileSync(finalPath, readFileSync(tempPath));
+    rmSync(tempPath, { force: true });
+    return true;
+  } finally {
+    releaseCanvas(canvas);
+  }
 }
 
 export async function refreshSessionSharePreview(

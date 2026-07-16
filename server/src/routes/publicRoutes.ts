@@ -1,11 +1,18 @@
 import { Router } from "express";
 import { getSessionByCode, listPublicSessions } from "../sessionStore.js";
 import { logger } from "../lib/logger.js";
+import { RUNTIME_MANIFEST } from "../runtimeManifest.js";
 
 export const publicRouter = Router();
 
 publicRouter.get("/health", (_req, res) => {
   res.json({ ok: true, time: Date.now() });
+});
+
+/** A no-store compatibility gate for PWAs that may still run an older bundle. */
+publicRouter.get("/runtime", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(RUNTIME_MANIFEST);
 });
 
 // Client-side error reporting. The browser POSTs uncaught errors here so crashes

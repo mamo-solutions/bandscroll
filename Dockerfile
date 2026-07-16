@@ -1,5 +1,8 @@
 # ---- Stage 1: build the React client ----
 FROM node:22-alpine AS client-build
+ARG BUILD_ID
+ENV BUILD_ID=$BUILD_ID
+RUN test -n "$BUILD_ID"
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
@@ -8,6 +11,9 @@ RUN npm run build
 
 # ---- Stage 2: build the Node server ----
 FROM node:22-alpine AS server-build
+ARG BUILD_ID
+ENV BUILD_ID=$BUILD_ID
+RUN test -n "$BUILD_ID"
 WORKDIR /app/server
 # Toolchain for better-sqlite3 on Alpine.
 RUN apk add --no-cache python3 make g++

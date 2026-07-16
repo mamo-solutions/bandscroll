@@ -25,7 +25,16 @@ export function validateUploadFile(path: string, claimedMimetype: string): boole
       return asAscii(0, 4) === "%PDF";
 
     case "image/png":
-      return header[0] === 0x89 && asAscii(1, 4) === "PNG";
+      // Require the complete PNG signature and a structurally valid IHDR
+      // header before passing the file to a native image decoder.
+      return (
+        header.length >= 24 &&
+        header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) &&
+        header.readUInt32BE(8) === 13 &&
+        asAscii(12, 16) === "IHDR" &&
+        header.readUInt32BE(16) > 0 &&
+        header.readUInt32BE(20) > 0
+      );
 
     case "image/jpeg":
       // JPEG markers: SOI (FFD8) followed by an APP or DQT/DCF marker.

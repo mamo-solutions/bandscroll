@@ -27,7 +27,7 @@ import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
-import { effectiveProgressFromElapsed, type SessionState } from "@/types/session";
+import { MICRO_POINTS_PER_POINT, effectiveDocumentCursor, effectiveProgressFromElapsed, type DocumentCursor, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
   const { code = "" } = useParams();
@@ -54,6 +54,13 @@ export function SessionViewer() {
   const anchorProgressRef = useRef<number | null>(null);
   const playbackProgressOffsetRef = useRef(0);
   const lastAnchorRef = useRef<SessionState["scrollAnchor"]>(undefined);
+  const canonicalPlaybackRef = useRef<{
+    cursor: DocumentCursor;
+    velocityPointsPerSecond: number;
+    receivedAt: number;
+    controlVersion: number;
+  } | null>(null);
+  const forceCanonicalResyncRef = useRef(false);
 
   useDocumentTitle(session?.title || (code ? `Session ${code}` : null));
   useWakeLock(true);
@@ -80,6 +87,20 @@ export function SessionViewer() {
   useEffect(() => {
     const currentSession = stateRef.current;
     const viewer = viewerRef.current;
+    if (
+      currentSession?.playbackMode === "scroll" &&
+      currentSession.documentCursor &&
+      currentSession.documentGeometry &&
+      viewer
+    ) {
+      // Layout readiness/resizing must restore the authoritative PDF cursor,
+      // never the legacy persisted percentage anchor.
+      viewer.scrollToDocumentCursor(
+        canonicalCursorAt(currentSession, canonicalPlaybackRef.current),
+        currentSession.documentGeometry
+      );
+      return;
+    }
     const anchor = currentSession?.scrollAnchor;
     if (
       !currentSession ||
@@ -125,10 +146,13 @@ export function SessionViewer() {
       }
 
       const previousSession = stateRef.current;
+      const forceResync = forceCanonicalResyncRef.current;
+      const receivedAt = performance.now();
       receivedAtRef.current = Date.now();
       lastStateVersionRef.current = nextSession.stateVersion;
       hasEverConnectedLiveRef.current = true;
       awaitingSocketSnapshotRef.current = false;
+      forceCanonicalResyncRef.current = false;
       stateRef.current = nextSession;
       setSession(nextSession);
       setNotFound(false);
@@ -136,6 +160,38 @@ export function SessionViewer() {
       setConnectionPhase("connected");
 
       if (nextSession.playbackMode === "scroll") {
+        if (nextSession.documentCursor && nextSession.documentGeometry && viewerRef.current) {
+          const controlChanged =
+            previousSession?.controlVersion !== nextSession.controlVersion ||
+            previousSession?.playing !== nextSession.playing ||
+            previousSession?.documentCursor?.revision !== nextSession.documentCursor.revision;
+          const predicted = canonicalCursorAt(nextSession, canonicalPlaybackRef.current);
+          const drift = Math.abs(predicted.yMicroPoints - nextSession.documentCursor.yMicroPoints);
+          const mustSnap = !canonicalPlaybackRef.current || controlChanged || !nextSession.playing || forceResync || drift > 20_000;
+          if (mustSnap) {
+            canonicalPlaybackRef.current = {
+              cursor: nextSession.documentCursor,
+              velocityPointsPerSecond: nextSession.scrollVelocityPointsPerSecond ?? 0,
+              receivedAt,
+              controlVersion: nextSession.controlVersion ?? 0,
+            };
+            // Snap only for explicit control changes (seek, marker, pause,
+            // resume) and initial synchronization—not periodic playback ticks.
+            viewerRef.current.scrollToDocumentCursor(nextSession.documentCursor, nextSession.documentGeometry);
+          } else {
+            // Absorb small transport and timer variance without a visible jump.
+            canonicalPlaybackRef.current = {
+              cursor: {
+                revision: nextSession.documentCursor.revision,
+                yMicroPoints: Math.round(predicted.yMicroPoints + (nextSession.documentCursor.yMicroPoints - predicted.yMicroPoints) * 0.2),
+              },
+              velocityPointsPerSecond: nextSession.scrollVelocityPointsPerSecond ?? 0,
+              receivedAt,
+              controlVersion: nextSession.controlVersion ?? 0,
+            };
+          }
+          return;
+        }
         if (nextSession.scrollAnchor && viewerRef.current) {
           const localProgress = viewerRef.current.getProgressForAnchor(nextSession.scrollAnchor);
           const anchorChanged =
@@ -219,6 +275,27 @@ export function SessionViewer() {
         const currentSession = stateRef.current;
         const viewer = viewerRef.current;
         if (currentSession && viewer && currentSession.playbackMode === "scroll") {
+          const base = canonicalPlaybackRef.current;
+          const cursor =
+            base && base.cursor.revision === currentSession.documentGeometry?.revision
+              ? {
+                  revision: base.cursor.revision,
+                  yMicroPoints: Math.round(
+                    base.cursor.yMicroPoints +
+                      (currentSession.playing
+                        ? ((performance.now() - base.receivedAt) * base.velocityPointsPerSecond * MICRO_POINTS_PER_POINT) / 1000
+                        : 0)
+                  ),
+                }
+              : effectiveDocumentCursor(
+                  currentSession,
+                  currentSession.playing ? Date.now() - receivedAtRef.current : 0
+                );
+          if (cursor && currentSession.documentGeometry) {
+            viewer.scrollToDocumentCursor(cursor, currentSession.documentGeometry);
+            raf = requestAnimationFrame(tick);
+            return;
+          }
           const elapsed = currentSession.playing ? Date.now() - receivedAtRef.current : 0;
           // While playing, progress + speed supplies a continuous trajectory.
           // Anchors arrive as discrete host snapshots, so applying them as the
@@ -281,6 +358,7 @@ export function SessionViewer() {
     const requestSnapshot = () => {
       if (socket.connected) {
         awaitingSocketSnapshotRef.current = true;
+        forceCanonicalResyncRef.current = true;
         setConnectionPhase("syncing");
         socket.emit("request-session-state", code);
       }
@@ -534,6 +612,20 @@ export function SessionViewer() {
       )}
     </main>
   );
+}
+
+function canonicalCursorAt(
+  session: SessionState,
+  base: { cursor: DocumentCursor; velocityPointsPerSecond: number; receivedAt: number } | null
+): DocumentCursor {
+  if (!base || !session.documentCursor || base.cursor.revision !== session.documentCursor.revision) {
+    return session.documentCursor ?? { revision: "", yMicroPoints: 0 };
+  }
+  const elapsedMs = session.playing ? performance.now() - base.receivedAt : 0;
+  return {
+    revision: base.cursor.revision,
+    yMicroPoints: Math.round(base.cursor.yMicroPoints + (elapsedMs * base.velocityPointsPerSecond * MICRO_POINTS_PER_POINT) / 1_000),
+  };
 }
 
 function Banner({

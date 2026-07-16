@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILD_ID: ${BUILD_ID:?Set BUILD_ID to the immutable release ID before building}
     restart: unless-stopped
     env_file:
       - .env
