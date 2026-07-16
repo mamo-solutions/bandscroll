@@ -1,5 +1,5 @@
 # ---- Stage 1: build the React client ----
-FROM node:22-alpine AS client-build
+FROM node:24-alpine AS client-build
 ARG BUILD_ID
 ENV BUILD_ID=$BUILD_ID
 RUN test -n "$BUILD_ID"
@@ -10,7 +10,7 @@ COPY client/ ./
 RUN npm run build
 
 # ---- Stage 2: build the Node server ----
-FROM node:22-alpine AS server-build
+FROM node:24-alpine AS server-build
 ARG BUILD_ID
 ENV BUILD_ID=$BUILD_ID
 RUN test -n "$BUILD_ID"
@@ -23,7 +23,7 @@ COPY server/ ./
 RUN npm run build
 
 # ---- Stage 3: production image ----
-FROM node:22-alpine AS production
+FROM node:24-alpine AS production
 ENV NODE_ENV=production
 WORKDIR /app/server
 

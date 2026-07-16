@@ -1,4 +1,4 @@
-const requiredMajor = 22;
+const requiredMajor = 24;
 const activeMajor = Number(process.versions.node.split(".")[0]);
 
 if (activeMajor !== requiredMajor) {

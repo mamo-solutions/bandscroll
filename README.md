@@ -22,8 +22,8 @@ itself, exactly in time with the host.
   auto-hiding overlays and edge-to-edge document presentation.
 - 📄 **Scroll mode and page mode** — continuous scrolling for long sheets or
   page-by-page playback with direct page navigation.
-- 🎚️ **Tap tempo** — tap in the beat and BandScroll derives the scroll speed
-  from pages per song and beats per song.
+- 🎚️ **Stable document tempo** — fixed Slow/Medium/Fast presets and an
+  advanced PDF-points-per-second value; speed never depends on a viewport.
 - 🎸 **Song markers / setlist** — save titled markers per page and jump to them
   instantly during the session.
 - 🦶 **Foot-switch friendly keyboard shortcuts** — arrow keys control speed
@@ -37,9 +37,9 @@ itself, exactly in time with the host.
   `.env` and never reaches the browser bundle.
 - 💾 **Pluggable persistence** — run with in-memory storage, file-backed JSON,
   or SQLite depending on how durable you need sessions to be.
-- 🧮 **Drift-free playback** — viewers extrapolate position locally and gently
-  correct toward the host's authoritative state; playback keeps moving even when
-  the host tab is in the background.
+- 🧮 **Canonical PDF-coordinate sync** — the server owns an integer intrinsic
+  PDF cursor. Every viewport renders that same coordinate at its top edge,
+  without page fractions, scroll heights, or screen-based calculations.
 - 🌍 **English & German UI**, auto-detected from the browser with a manual toggle.
 - 📱 **Installable PWA** with a modern, responsive, warm-pastel interface; the
   admin control view is optimized for tablets in portrait mode.
@@ -51,19 +51,28 @@ itself, exactly in time with the host.
 
 ## How it works
 
-The server holds the single source of truth per session: a normalized
-`progress` (0–1), a `speed` (progress per second), and a server timestamp. It
-does **not** tick a timer — instead every client computes its own position:
+For PDF scroll sessions, the server owns a `DocumentCursor`: an integer offset
+from the start of the PDF measured in micro-points. On upload, BandScroll reads
+the immutable PDF page geometry and stores a document revision. Playback adds a
+PDF-points-per-second velocity to that cursor; it never uses normalized progress,
+page fractions, viewport dimensions, or CSS scroll height.
 
-```ts
-effectiveProgress = clamp01(progress + ((now - updatedAt) / 1000) * speed)
-```
+The server broadcasts timestamped `SyncSnapshot`s while playing. Each viewer
+uses `requestAnimationFrame` to render a local PDF-coordinate trajectory between
+snapshots. A seek, pause, reconnect, fullscreen/resize layout recovery, document
+reload, or significant mismatch snaps exactly to the latest server cursor.
+Normal uninterrupted playback receives only bounded coordinate corrections, so
+the scroll remains smooth while every client keeps the same PDF point at the top
+of its view.
 
-So a single state update with `playing: true` is enough to keep a client
-scrolling indefinitely. The host emits discrete events on play/pause/seek/speed
-plus a slim sync every 250 ms to keep everyone aligned; viewers ease toward the
-target each frame and snap on large corrections (seeks). State is authoritative
-on the server and shared between HTTP and WebSocket via a single session.
+The admin sends discrete revision-checked controls (`resume`, `pause`, `seek`,
+`restart`, `stop`, marker seek, and speed change). A renewable controller lease
+ensures that one conductor is authoritative. Selecting a marker sends its ID;
+the server resolves the persisted page to the exact geometry-derived page start.
+
+Clients must also match the server's generated build ID and sync protocol before
+joining. An older PWA automatically updates its service worker and reloads, so
+it cannot participate using stale synchronization code.
 
 ## Tech stack
 
@@ -78,7 +87,7 @@ on the server and shared between HTTP and WebSocket via a single session.
 
 ## Quick start
 
-Requirements: Node.js 22.x and npm 10+.
+Requirements: Node.js 24.x and npm 10+.
 
 ```bash
 git clone <your-fork-url> bandscroll && cd bandscroll
@@ -121,6 +130,7 @@ All configuration is via the root `.env` (see `.env.example`):
 | `AI_CONFIG_ENCRYPTION_KEY` | Required to store app-wide AI provider keys encrypted at rest. |
 | `LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. |
 | `METRICS_INTERVAL_MS` | Performance-stats summary interval in ms (default `60000`, `0` disables). |
+| `BUILD_ID` | Immutable build identifier required for Docker/release builds; generated locally for development. |
 
 There is intentionally **no** `VITE_ADMIN_PASSWORD`: the password is POSTed once
 and authentication lives in an http-only cookie.
@@ -132,8 +142,8 @@ The server emits **structured logs** — one JSON object per line in production
 development. Verbosity is gated by `LOG_LEVEL`. HTTP requests (method, path,
 status, duration), Socket.IO lifecycle (connect/disconnect/room joins/admin
 denials), and storage/upload warnings are all logged; the high-frequency
-`admin-sync` loop logs only at `debug`, so it never floods the log at the
-default level.
+playback snapshots are emitted at a controlled cadence and do not cause
+persistent session writes, so normal scroll playback does not flood storage.
 
 **Performance stats** are summarized to the log every `METRICS_INTERVAL_MS`
 (`msg: "metrics"`) and served live, admin-only, at `GET /api/admin/metrics`:
@@ -200,6 +210,7 @@ bandscroll/
 │   └── src/{app,index,env,types,sessionStore,auth}.ts
 │       ├── routes/{publicRoutes,adminRoutes}.ts
 │       ├── sockets/socketServer.ts
+│       ├── lib/{documentPosition,sessionControl,syncSnapshot}.ts
 │       ├── store/{memorySessionStore,fileSessionStore,sqliteSessionStore}.ts
 │       └── uploads/{cleanup,validate}.ts
 ├── .github/workflows/ # CI and release automation
@@ -216,8 +227,7 @@ Sessions default to in-memory storage; set `STORAGE=file` (JSON) or
 Uploads are garbage-collected when a session is deleted or its PDF is replaced,
 provided no other session references the same file. There is a single shared
 host password (no per-user accounts). Possible next steps: a Postgres adapter, a
-Redis adapter for horizontal scaling, multi-file setlists, release artifacts
-for deployment targets, and per-user roles.
+Redis adapter for horizontal scaling, multi-file setlists, and per-user roles.
 
 ## Contributing
 

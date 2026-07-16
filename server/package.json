@@ -1,12 +1,12 @@
 {
   "name": "bandscroll-server",
-  "version": "1.15.5",
+  "version": "1.15.6",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "engines": {
-    "node": "22.x",
+    "node": "24.x",
     "npm": ">=10"
   },
   "scripts": {
@@ -41,7 +41,7 @@
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.18.1",
     "@types/multer": "^1.4.12",
-    "@types/node": "^22.10.5",
+    "@types/node": "^24.13.3",
     "@types/session-file-store": "^1.2.6",
     "socket.io-client": "^4.8.1",
     "tsx": "^4.19.2",

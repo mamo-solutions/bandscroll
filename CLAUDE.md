@@ -1,78 +1,116 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# BandScroll contributor guidance
 
 ## What this is
 
-`BandScroll` — a self-hostable React PWA that synchronizes PDF auto-scroll of a live session over WebSockets. A host/conductor controls scroll progress; many read-only public clients follow in real time. Two npm packages, `client/` (React + Vite + TS) and `server/` (Express + Socket.IO + TS), plus root tooling.
+`BandScroll` is a self-hostable React PWA for synchronized live documents. A
+conductor controls a session while read-only public viewers follow the same
+server-owned position over WebSockets. The repository contains `client/`
+(React + Vite + TypeScript), `server/` (Express + Socket.IO + TypeScript), and
+root-level build/release tooling.
 
-## Commands
+`AGENTS.md` is a symlink to this file. Keep shared contributor guidance here.
+
+## Runtime and commands
+
+Node.js 24.x and npm 10+ are required. The server scripts reject other Node
+majors because `better-sqlite3` is a native addon. After switching Node versions,
+reinstall or rebuild dependencies before starting the server or running tests.
 
 ```bash
-# From repo root
-npm install && npm run install:all   # root concurrently + both packages
-npm run dev                          # backend :3000 + frontend :5173 in parallel
-npm run build                        # client build, then server tsc
-npm test                             # server suite, then client suite
+# From the repository root
+nvm use
+npm install && npm run install:all
+npm run dev                    # server :3000, Vite client :5173
+npm test                        # server then client Vitest suites
+npm run build                   # client build/typecheck then server typecheck
 
 # Per package
-cd server && npm run dev             # tsx watch (hot reload), serves :3000
-cd server && npm test                # vitest run (unit + integration)
-cd server && npx tsc --noEmit        # typecheck app code (tests excluded from this config)
-cd client && npm run dev             # vite dev :5173
-cd client && npm run build           # tsc && vite build  (also the typecheck gate)
-cd client && npm test                # vitest run
-
-# Single test file / name filter
-cd server && npx vitest run src/sessionStore.test.ts
-cd server && npx vitest run -t "broadcasts an authenticated admin seek"
+cd server && npm run dev
+cd server && npm test
+cd server && npx tsc --noEmit
+cd client && npm run dev
+cd client && npm test
+cd client && npm run build
 ```
 
-Tests use **Vitest**. Server: `sessionStore.test.ts` + `auth.test.ts` (pure units) and `server.integration.test.ts` (boots the real app via `createAppServer()` on an ephemeral port, then drives REST + `socket.io-client` to assert auth gating and sync broadcasts). Client: `src/types/session.test.ts` covers the `effectiveProgress`/`clamp01` math. The integration test injects a known `ADMIN_PASSWORD` and a temp `UPLOAD_DIR` via [server/vitest.config.ts](server/vitest.config.ts) (`env`); dotenv does not override already-set vars. Server test files are excluded from the build tsconfig so they never reach `dist`.
+Server integration tests boot `createAppServer()` on an ephemeral port. The
+Vitest configuration forces `STORAGE=memory` and a temporary `DATA_DIR`, so the
+ordinary test suite never depends on SQLite or a local native addon. Keep that
+test isolation intact.
 
-Login uses `ADMIN_PASSWORD` from the root `.env` (not `.env.example`). The value may differ from the default `change-me-now`; read `.env` before assuming.
+## Canonical PDF synchronization
 
-## Architecture
+For a PDF scroll session, the server owns the only authoritative position:
 
-### Authoritative state + client-side extrapolation
-The server holds the single source of truth per session in a pluggable store ([server/src/sessionStore.ts](server/src/sessionStore.ts)). The default adapter is an in-memory `Map` (`MemorySessionStore`), with optional persistent adapters: `FileSessionStore` (writes `DATA_DIR/sessions.json`) and `SqliteSessionStore` (writes `DATA_DIR/sessions.db` via `better-sqlite3`, one row write per mutation). Both load once into an in-memory mirror at startup and reset transient fields (`connectedClients`, `updatedAt`), so read semantics match the memory store. `progress` is normalized `0..1`, `speed` is `progress`/second, `updatedAt` is a server ms timestamp. Between broadcasts each client extrapolates its own position via `effectiveProgress()` ([client/src/types/session.ts](client/src/types/session.ts) and mirrored in [server/src/types.ts](server/src/types.ts)):
+- `DocumentGeometry`: immutable page heights and total document distance in
+  intrinsic PDF points, tied to a document revision.
+- `DocumentCursor`: integer `yMicroPoints` from the start of that revision.
+- `scrollVelocityPointsPerSecond`, `positionUpdatedAt`, and a discrete
+  `controlVersion`.
 
-```
-effectiveProgress = clamp01(progress + ((now - updatedAt) / 1000) * speed)
-```
+The server emits materialized `SyncSnapshot`s with a monotonic
+`positionSequence` and server timestamp. Clients render a local PDF-coordinate
+trajectory with `requestAnimationFrame` between broadcasts. They snap to the
+latest canonical cursor after a discrete action, reconnect, hidden-tab wake,
+document reload, fullscreen/resize layout recovery, or a large mismatch;
+uninterrupted playback uses bounded coordinate correction only.
 
-So a single `session-state` with `playing:true` is enough to make a client auto-scroll indefinitely. The server **does** authoritatively tick playback: a `playbackTimer` `setInterval` in [socketServer.ts](server/src/sockets/socketServer.ts) advances each playing session through `nextPlaybackPatch()` ([server/src/lib/sessionPlayback.ts](server/src/lib/sessionPlayback.ts)) and re-broadcasts `session-state` — this is what stops scroll playback at `progress >= 1` and page playback at the last page. The host additionally emits a slim `admin-sync` every 250 ms to refresh `progress`/`updatedAt` and keep everyone aligned. Viewers ease toward the target each animation frame and snap when the delta is large (seek/correction) — see the rAF loops in [SessionViewer.tsx](client/src/pages/SessionViewer.tsx) and [AdminSessionControl.tsx](client/src/pages/AdminSessionControl.tsx).
+Viewport size, CSS scroll height, rendered canvas dimensions, page fractions,
+normalized `progress`, and screens-per-minute are never valid input to canonical
+scroll synchronization. A viewport only maps the same PDF cursor to its own CSS
+pixels, with that cursor at the top edge. `progress`, `scrollAnchor`, and
+scroll-mode `currentPage` are legacy/migration or display fields; do not revive
+them for scroll-mode controls.
 
-### Auto-stop at end of song
-Sessions carry an `autoStopAtSongEnd` toggle (default off, switch in [AdminSessionSetupPanel.tsx](client/src/components/AdminSessionSetupPanel.tsx)). When on, playback halts at each **song boundary** — the start of the next `SongMarker`'s page — so the conductor restarts every tune deliberately; the last song still runs to the end-of-document stop. Detection is split by where the geometry lives: **page mode** is server-side in `nextPlaybackPatch` (via `nextSongStartPage()`), so only natural tick advancement triggers it and manual page jumps never false-fire. **Scroll mode** is host-side in `AdminSessionControl.tsx` (`maybeAutoStopAtSongEnd`), because page→`progress` geometry (`PdfViewer.getProgressForPage()`) exists only on the client; it uses a crossing test against the previous frame's progress (not `getCurrentPage()`, whose nearest-page rounding would skip the boundary) and halts via the normal authoritative `admin-pause`, so viewers stay consistent.
+## Controls, markers, and playback
 
-### App wiring
-[server/src/app.ts](server/src/app.ts) exports `createAppServer()` which builds the wired Express app + HTTP server + Socket.IO but does **not** listen. [index.ts](server/src/index.ts) is a thin launcher that calls it and listens; the integration test calls it on an ephemeral port. Add middleware/routes in `app.ts`, not `index.ts`.
+Every canonical scroll-mode conductor action uses the `admin-control` socket
+command and `applyCanonicalControl()` in `server/src/lib/sessionControl.ts`:
+`resume`, `pause`, `seek`, `restart`, `stop`, `seek-marker`, and `set-speed`.
+Commands include a document revision and expected `controlVersion`; the server
+materializes the cursor at receipt time, validates it, applies the patch
+atomically, and broadcasts the result.
 
-### Auth is one express-session shared by HTTP and WebSocket
-[server/src/auth.ts](server/src/auth.ts) defines `sessionMiddleware`. It is registered on Express **and** on Socket.IO via `io.engine.use(sessionMiddleware)` ([socketServer.ts](server/src/sockets/socketServer.ts)). Admin HTTP routes are guarded by `requireAdmin`; admin socket events are guarded by `isAdminSocket()` reading `socket.request.session.isAdmin`. Unauthenticated admin events are dropped and answered with `admin-error` — never trust the client for `admin-*`.
+The active admin holds a renewable 15-second controller lease and renews it
+every five seconds. Marker navigation sends only a marker ID. The server resolves
+the stored marker page through document geometry, pauses at the exact page start,
+and atomically restores an optional canonical marker velocity.
 
-**Critical gotcha:** the server reads the session **only at the websocket handshake**. The browser socket is a singleton ([client/src/sockets/socket.ts](client/src/sockets/socket.ts)) that often connects anonymously on the public home page *before* login. After login/logout you MUST force a fresh handshake so the socket carries (or drops) the admin cookie — `auth.login`/`auth.logout` call `reconnectSocket()` for exactly this. If admin commands silently stop propagating, suspect a stale pre-login handshake first.
+Playback broadcasts are ephemeral: they do not persist every 250 ms and do not
+increment `controlVersion`. Persist only discrete controls and terminal
+transitions. Do not add browser position heartbeats, `admin-sync`, parallel
+control paths, or viewport-derived auto-stop logic. Server cursor advancement
+handles the end of the document and scroll-mode song-boundary auto-stop.
 
-### Server → client broadcast helpers
-Routes mutate state then broadcast through module-level helpers in [socketServer.ts](server/src/sockets/socketServer.ts): `broadcastSessionState` (to the session room `session:<code>`), `broadcastSessionEnded`, and `broadcastSessionListUpdated` (global — drives the public home list to refresh). REST admin actions and socket admin events both funnel state changes through `updateSessionState` + these broadcasts, so the two control surfaces stay consistent.
+## Runtime compatibility and deployment
 
-### Frontend UI system
-Styling is **Tailwind v4** (via `@tailwindcss/vite`, no `tailwind.config` — theme lives in [client/src/styles.css](client/src/styles.css)) with **shadcn-style** primitives in `client/src/components/ui/` (Button, Card, Input, Label, Badge, Slider) built on Radix + CVA + the `cn()` helper ([client/src/lib/utils.ts](client/src/lib/utils.ts)). The `@/*` path alias maps to `client/src` (set in both `tsconfig.json` and `vite.config.ts`). Design language: warm-pastel "soft UI" — clay-terracotta primary on a cream canvas, sage = live/playing, amber = paused; semantic CSS variables mapped via `@theme inline` (use `bg-primary`, `text-muted-foreground`, etc., never raw hex). Icons are **lucide-react** (never emoji). Everything is mobile-first; verify at 375px. Add new shadcn components with `npx shadcn@latest add <name>` (configured via [client/components.json](client/components.json)).
+The generated `SYNC_PROTOCOL` and build ID are checked through `/api/runtime`
+and in the Socket.IO handshake. The client checks before it renders, when a
+socket reconnects, on focus/visibility, and once a minute. A mismatch updates
+the service worker and reloads before the client can join a session.
 
-Most routes render inside [Layout.tsx](client/src/components/Layout.tsx) (shared sticky header + [Footer.tsx](client/src/components/Footer.tsx)). The **public viewer `/session/:code` is intentionally OUTSIDE that Layout** ([App.tsx](client/src/App.tsx)) — it's a full-screen immersive reader: the PDF/image fills `h-dvh` and a single merged bar (brand/home + title + code + connection + progress) plus the footer float as translucent overlays. While `playing`, those overlays auto-hide after ~2.5 s idle and reveal on any interaction (the effect in [SessionViewer.tsx](client/src/pages/SessionViewer.tsx) listening on window pointer/key events) — never trap the user; keep a reveal path. The PDF viewer ([PdfViewer.tsx](client/src/components/PdfViewer.tsx)) renders react-pdf for PDFs and a plain `<img>` for image uploads, both inside the same scroll container so the sync loop is identical.
+Keep `client/scripts/version.js`, `server/scripts/version.js`, and
+`scripts/create-release-manifest.mjs` aligned. Container builds require a
+non-empty immutable `BUILD_ID`; deploy matching client/server artifacts and
+their runtime manifest together. Preserve no-cache HTML/service-worker behavior
+and hashed-asset caching.
 
-### Public visibility
-`listPublicSessions()` returns all **non-ended** sessions (draft + live), newest first. Creating a session makes it instantly visible on `/` and fires `session-list-updated`. A listed draft may have no PDF yet; the viewer shows a placeholder and updates live when the PDF/state changes.
+## Architecture and conventions
 
-### Session codes & uploads
-Codes are `SESSION-####` generated in `generateCode()`. PDF uploads (multer, [adminRoutes.ts](server/src/routes/adminRoutes.ts)) are admin-only, PDF-only, ≤50 MB, stored under `UPLOAD_DIR` with a random UUID filename (never the client filename — path-traversal safe). Served read-only at `/uploads/:file`. Obsolete upload files are removed by [cleanup.ts](server/src/uploads/cleanup.ts) when a session is deleted or its PDF is replaced, as long as no other session still references the file.
-
-## Conventions & constraints
-
-- **ESM with `.js` extensions on relative imports in `server/src`** — required so the same source runs under `tsx` (dev) and compiled `node dist` (prod). Keep this when adding server files.
-- The `client` and `server` `tsconfig.json` differ (DOM lib + bundler/noEmit vs Node ESM emit). Run typechecks in the right package dir.
-- Dev relies on Vite proxying `/api`, `/uploads`, `/socket.io` → `:3000` so the browser sees one origin (cookies + WS work without CORS friction). In prod the server serves the built client `dist` + a SPA fallback; Caddy terminates TLS and proxies to `app:3000`.
-- State storage is configurable via `STORAGE` (`memory`, `file`, or `sqlite`). With `file`/`sqlite`, sessions survive restarts in `DATA_DIR/sessions.json` / `DATA_DIR/sessions.db`; `connectedClients` and `updatedAt` are reset on load. `sqlite` uses `better-sqlite3`, whose native addon has no musl prebuild — the Dockerfile installs a build toolchain to compile it. `ADMIN_PASSWORD` must never reach the client bundle — there is intentionally no `VITE_ADMIN_PASSWORD`; the password is POSTed once and auth lives in an http-only cookie.
-- Set `NODE_ENV=production` in prod so the session cookie is sent with `secure: true`.
-- **Logging & metrics:** use the structured logger ([server/src/lib/logger.ts](server/src/lib/logger.ts)) — `logger.info("msg", { fields })`, `logger.child("context")` — never raw `console.*` in server code. It's level-gated by `LOG_LEVEL` (JSON in prod, pretty in dev) and never throws. The hot-path `admin-sync` socket handler must stay at `log.debug` (dropped at the default `info` level) — its throughput is surfaced via the `adminSyncEvents` counter in [metrics.ts](server/src/lib/metrics.ts) instead. Metrics are fed by `requestLogger`/socket handlers, logged periodically from [index.ts](server/src/index.ts) (timer lives in the entrypoint, NOT `createAppServer()`, so tests don't leak it), and exposed at admin-only `GET /api/admin/metrics`. On the client, route errors through `reportError()` ([client/src/lib/errorLog.ts](client/src/lib/errorLog.ts)), not `console.*`.
+- `server/src/app.ts` exports `createAppServer()` and does not listen;
+  `server/src/index.ts` is the production launcher. Add app wiring in `app.ts`.
+- Express and Socket.IO share one `express-session` middleware. A login/logout
+  must reconnect the socket to obtain a new authenticated handshake.
+- Server relative imports use ESM `.js` extensions. Use strict TypeScript.
+- Session persistence is selectable with `STORAGE=memory|file|sqlite`; file and
+  SQLite adapters keep an in-memory mirror and reset transient client counts on
+  load.
+- PDF uploads extract geometry and a revision. Image signatures are validated
+  before native preview rendering. Never pass unchecked input to native decoders.
+- Use the structured server logger, never `console.*`. Send client errors via
+  `reportError()`.
+- The UI uses Tailwind v4 and shadcn-style primitives. The public viewer is an
+  immersive route outside the normal layout; preserve its keyboard/pointer path
+  for revealing auto-hidden overlays.
+- Preserve unrelated user changes and avoid destructive Git commands without
+  explicit approval.
