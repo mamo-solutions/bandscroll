@@ -106,6 +106,7 @@ export function AdminSessionControl() {
   const markerRepairSignatureRef = useRef<string | null>(null);
   const markerRepairInFlightRef = useRef(false);
   const cursorCommandInFlightRef = useRef(false);
+  const cursorPositionCommandInFlightRef = useRef(false);
   const pdfInput = useRef<HTMLInputElement>(null);
 
   const KB_DOCUMENT_SPEED_STEP = DOCUMENT_SPEED_STEP;
@@ -238,11 +239,17 @@ export function AdminSessionControl() {
 
     const onState = (nextSession: SessionState) => {
       if (nextSession.id !== id) return;
+      const shouldApplyCommandCursor = cursorPositionCommandInFlightRef.current;
       cursorCommandInFlightRef.current = false;
+      cursorPositionCommandInFlightRef.current = false;
       stateRef.current = nextSession;
       setSession(nextSession);
       if (nextSession.playbackMode === "scroll") {
-        if (nextSession.documentCursor && nextSession.documentGeometry) {
+        if (
+          (nextSession.playing || shouldApplyCommandCursor) &&
+          nextSession.documentCursor &&
+          nextSession.documentGeometry
+        ) {
           viewerRef.current?.scrollToDocumentCursor(nextSession.documentCursor, nextSession.documentGeometry);
         }
         // While auto-stop is engaged but the authoritative pause hasn't landed
@@ -268,6 +275,7 @@ export function AdminSessionControl() {
     };
     const onError = (e: { error: string }) => {
       cursorCommandInFlightRef.current = false;
+      cursorPositionCommandInFlightRef.current = false;
       if (e?.error === "control-version-stale") {
         setErrorMessage("control-version-stale");
         return;
@@ -395,7 +403,7 @@ export function AdminSessionControl() {
           currentSession,
           currentSession.playing ? Date.now() - (currentSession.positionUpdatedAt ?? Date.now()) : 0
         );
-        if (cursor && currentSession.documentGeometry) {
+        if (currentSession.playing && cursor && currentSession.documentGeometry) {
           viewer.scrollToDocumentCursor(cursor, currentSession.documentGeometry);
           raf = requestAnimationFrame(tick);
           return;
@@ -529,6 +537,12 @@ export function AdminSessionControl() {
       return;
     }
     cursorCommandInFlightRef.current = true;
+    cursorPositionCommandInFlightRef.current =
+      intent === "pause" ||
+      intent === "seek" ||
+      intent === "restart" ||
+      intent === "stop" ||
+      intent === "seek-marker";
     setErrorMessage(null);
     socket.emit("admin-control", {
       sessionId: id,
@@ -623,6 +637,21 @@ export function AdminSessionControl() {
       return;
     }
     sendCanonicalControl("seek", { cursor });
+  }
+
+  function handleDocumentLoad(pageCount: number): void {
+    setNumPages(pageCount);
+    const currentSession = stateRef.current;
+    if (
+      currentSession?.playbackMode === "scroll" &&
+      currentSession.documentCursor &&
+      currentSession.documentGeometry
+    ) {
+      viewerRef.current?.scrollToDocumentCursor(
+        currentSession.documentCursor,
+        currentSession.documentGeometry
+      );
+    }
   }
 
   function goToPage(page: number) {
@@ -1116,7 +1145,6 @@ export function AdminSessionControl() {
                     backgroundMode={session.backgroundMode}
                     flush={!distractionFree}
                     edgeToEdge={distractionFree}
-                    documentGeometry={session.documentGeometry}
                     visiblePage={session.playbackMode === "page" ? session.currentPage : undefined}
                     onUserScroll={(progress) => {
                       if (stateRef.current?.playing) return;
@@ -1128,12 +1156,7 @@ export function AdminSessionControl() {
                       liveProgressRef.current = progress;
                       setUiProgress(progress);
                     }}
-                    onUserCursor={(cursor) => {
-                      const current = stateRef.current;
-                      if (!current?.documentGeometry || current.playing) return;
-                      sendCanonicalControl("seek", { cursor });
-                    }}
-                    onDocumentLoad={setNumPages}
+                    onDocumentLoad={handleDocumentLoad}
                   />
                 </>
               ) : (

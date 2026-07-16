@@ -91,8 +91,6 @@ type Props = {
   visiblePage?: number;
   /** Called (already DOM-throttled by rAF) when the user scrolls manually. */
   onUserScroll?: (progress: number) => void;
-  onUserCursor?: (cursor: DocumentCursor) => void;
-  documentGeometry?: DocumentGeometry;
   /** Called when a PDF finishes loading with its page count. */
   onDocumentLoad?: (numPages: number) => void;
   /** Called whenever the viewer's scroll metrics become available or change. */
@@ -113,8 +111,6 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     flush = false,
     visiblePage,
     onUserScroll,
-    onUserCursor,
-    documentGeometry,
     onDocumentLoad,
     onMetricsChange,
     blockUserScroll,
@@ -540,14 +536,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       if (onUserScroll && el) {
         onUserScroll(singlePageMode ? pageProgress(clampedVisiblePage, numPages) : clamp01(el.scrollTop / maxScroll()));
       }
-      // The parent deliberately receives a canonical coordinate, never a
-      // normalized scroll ratio, when a server geometry is available.
-      if (onUserCursor && documentGeometry && el) {
-        const cursor = scrollTopToCursor(el.scrollTop, documentGeometry);
-        if (cursor) onUserCursor(cursor);
-      }
     });
-  }, [clampedVisiblePage, documentGeometry, numPages, onUserCursor, onUserScroll, scrollTopToCursor, singlePageMode, updateRange]);
+  }, [clampedVisiblePage, numPages, onUserScroll, singlePageMode, updateRange]);
 
   const centerMsg = "flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground";
 
