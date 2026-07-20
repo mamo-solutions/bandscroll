@@ -131,6 +131,7 @@ export type SessionPatch = Partial<
     | "numPages"
     | "documentGeometry"
     | "documentCursor"
+    | "autoStopCursor"
     | "scrollVelocityPointsPerSecond"
     | "positionUpdatedAt"
     | "controlVersion"
@@ -159,6 +160,9 @@ export function updateSessionState(
   const geometry = patch.documentGeometry ?? session.documentGeometry;
   if (patch.documentCursor !== undefined) {
     patch.documentCursor = clampDocumentCursor(patch.documentCursor, geometry);
+  }
+  if (patch.autoStopCursor !== undefined && patch.autoStopCursor !== null) {
+    patch.autoStopCursor = clampDocumentCursor(patch.autoStopCursor, geometry) ?? null;
   }
   if (patch.scrollVelocityPointsPerSecond !== undefined) {
     patch.scrollVelocityPointsPerSecond = clampCanonicalScrollVelocity(

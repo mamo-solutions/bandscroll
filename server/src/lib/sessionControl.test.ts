@@ -65,6 +65,45 @@ describe("canonical conductor controls", () => {
     });
   });
 
+  it("persists a conductor-derived auto-stop cursor when resuming", () => {
+    const result = applyCanonicalControl(session(), {
+      intent: "resume",
+      revision: geometry.revision,
+      expectedControlVersion: 4,
+      autoStopCursor: { revision: geometry.revision, yMicroPoints: 275_000 },
+    });
+
+    expect(result).toEqual({
+      patch: expect.objectContaining({
+        autoStopCursor: { revision: geometry.revision, yMicroPoints: 275_000 },
+        playing: true,
+        controlVersion: 5,
+      }),
+    });
+  });
+
+  it("clears a prior auto-stop cursor when resume has no valid target", () => {
+    const withTarget = session({
+      autoStopCursor: { revision: geometry.revision, yMicroPoints: 275_000 },
+    });
+
+    const explicitClear = applyCanonicalControl(withTarget, {
+      intent: "resume",
+      revision: geometry.revision,
+      expectedControlVersion: 4,
+      autoStopCursor: null,
+    });
+    expect(explicitClear).toEqual({ patch: expect.objectContaining({ autoStopCursor: null }) });
+
+    const invalidTarget = applyCanonicalControl(withTarget, {
+      intent: "resume",
+      revision: geometry.revision,
+      expectedControlVersion: 4,
+      autoStopCursor: { revision: "different-revision", yMicroPoints: 275_000 },
+    });
+    expect(invalidTarget).toEqual({ patch: expect.objectContaining({ autoStopCursor: null }) });
+  });
+
   it("resolves a persisted marker to its intrinsic page start", () => {
     const result = applyCanonicalControl(session(), {
       intent: "seek-marker",

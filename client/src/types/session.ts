@@ -51,6 +51,7 @@ export type SessionState = {
   stateVersion: number;
   documentGeometry?: DocumentGeometry;
   documentCursor?: DocumentCursor;
+  autoStopCursor?: DocumentCursor | null;
   scrollVelocityPointsPerSecond?: number;
   positionUpdatedAt?: number;
   controlVersion?: number;

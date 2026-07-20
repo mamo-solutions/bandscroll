@@ -67,6 +67,18 @@ describe("getEffectivePageHeights", () => {
       140,
     ]);
   });
+
+  it("returns to responsive predicted heights after stale measurements are cleared", () => {
+    const fullscreenHeights = [1_000, 3_000];
+    const embeddedPredictedHeights = [600, 1_800];
+
+    expect(getEffectivePageHeights(embeddedPredictedHeights, fullscreenHeights)).toEqual(
+      fullscreenHeights
+    );
+    expect(getEffectivePageHeights(embeddedPredictedHeights, [])).toEqual(
+      embeddedPredictedHeights
+    );
+  });
 });
 
 describe("getVisiblePageRange", () => {

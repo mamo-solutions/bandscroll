@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clamp01,
+  effectiveDocumentCursor,
   effectiveProgress,
   effectiveProgressFromElapsed,
   type SessionState,
@@ -113,5 +114,42 @@ describe("effectiveProgressFromElapsed", () => {
   it("clamps at 1.0 at the end of the document", () => {
     const state = makeState({ playing: true, progress: 0.95, speed: 0.01 });
     expect(effectiveProgressFromElapsed(state, 100_000)).toBe(1);
+  });
+});
+
+describe("effectiveDocumentCursor", () => {
+  const scrollState = makeState({
+    playing: true,
+    documentGeometry: {
+      revision: "document-v1",
+      pageHeightsPoints: [300, 700],
+      totalHeightPoints: 1_000,
+    },
+    documentCursor: {
+      revision: "document-v1",
+      yMicroPoints: 125_000,
+    },
+    scrollVelocityPointsPerSecond: 80,
+  });
+
+  it("advances from a local elapsed duration without relying on a server wall clock", () => {
+    expect(effectiveDocumentCursor(scrollState, 2_500)).toEqual({
+      revision: "document-v1",
+      yMicroPoints: 325_000,
+    });
+  });
+
+  it("uses the authoritative stored cursor while paused", () => {
+    expect(effectiveDocumentCursor({ ...scrollState, playing: false }, 2_500)).toEqual({
+      revision: "document-v1",
+      yMicroPoints: 125_000,
+    });
+  });
+
+  it("clamps playback at the final canonical document position", () => {
+    expect(effectiveDocumentCursor(scrollState, 20_000)).toEqual({
+      revision: "document-v1",
+      yMicroPoints: 1_000_000,
+    });
   });
 });

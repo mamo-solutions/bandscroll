@@ -57,6 +57,8 @@ export type SessionState = {
    * backwards-compatible persisted sessions and non-scroll UI display. */
   documentGeometry?: DocumentGeometry;
   documentCursor?: DocumentCursor;
+  /** The next server-enforced scroll-mode song-end cursor, derived by the conductor. */
+  autoStopCursor?: DocumentCursor | null;
   scrollVelocityPointsPerSecond?: number;
   positionUpdatedAt?: number;
   /** Changes only for discrete conductor commands, never playback ticks. */

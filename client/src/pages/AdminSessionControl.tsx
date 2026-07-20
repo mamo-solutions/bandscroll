@@ -66,7 +66,7 @@ import type {
 } from "@/types/ai";
 import {
   clamp01,
-  effectiveDocumentCursor,
+  MICRO_POINTS_PER_POINT,
   type PlaybackMode,
   type SessionBackgroundMode,
   type SessionState,
@@ -106,6 +106,12 @@ export function AdminSessionControl() {
   const markerRepairSignatureRef = useRef<string | null>(null);
   const markerRepairInFlightRef = useRef(false);
   const cursorCommandInFlightRef = useRef(false);
+  const canonicalPlaybackRef = useRef<{
+    cursor: NonNullable<SessionState["documentCursor"]>;
+    velocityPointsPerSecond: number;
+    receivedAt: number;
+    controlVersion: number;
+  } | null>(null);
   const cursorPositionCommandInFlightRef = useRef(false);
   const pdfInput = useRef<HTMLInputElement>(null);
 
@@ -223,6 +229,14 @@ export function AdminSessionControl() {
   useEffect(() => {
     api.adminSession(id).then((loaded) => {
       lastWallRef.current = Date.now();
+      if (loaded.playbackMode === "scroll" && loaded.documentCursor) {
+        canonicalPlaybackRef.current = {
+          cursor: loaded.documentCursor,
+          velocityPointsPerSecond: loaded.scrollVelocityPointsPerSecond ?? 0,
+          receivedAt: performance.now(),
+          controlVersion: loaded.controlVersion ?? 0,
+        };
+      }
       stateRef.current = loaded;
       setSession(loaded);
       liveProgressRef.current = loaded.progress;
@@ -242,6 +256,31 @@ export function AdminSessionControl() {
       const shouldApplyCommandCursor = cursorPositionCommandInFlightRef.current;
       cursorCommandInFlightRef.current = false;
       cursorPositionCommandInFlightRef.current = false;
+      const controlChanged =
+        stateRef.current?.controlVersion !== nextSession.controlVersion ||
+        stateRef.current?.playing !== nextSession.playing ||
+        stateRef.current?.documentCursor?.revision !== nextSession.documentCursor?.revision;
+      if (nextSession.playbackMode === "scroll" && nextSession.documentCursor) {
+        const previousPlayback = canonicalPlaybackRef.current;
+        const predicted = canonicalCursorAt(nextSession, previousPlayback);
+        const drift = Math.abs(predicted.yMicroPoints - nextSession.documentCursor.yMicroPoints);
+        const mustSnap = !previousPlayback || controlChanged || !nextSession.playing || drift > 20_000;
+        canonicalPlaybackRef.current = {
+          cursor: mustSnap
+            ? nextSession.documentCursor
+            : {
+                revision: nextSession.documentCursor.revision,
+                yMicroPoints: Math.round(
+                  predicted.yMicroPoints + (nextSession.documentCursor.yMicroPoints - predicted.yMicroPoints) * 0.2
+                ),
+              },
+          velocityPointsPerSecond: nextSession.scrollVelocityPointsPerSecond ?? 0,
+          receivedAt: performance.now(),
+          controlVersion: nextSession.controlVersion ?? 0,
+        };
+      } else {
+        canonicalPlaybackRef.current = null;
+      }
       stateRef.current = nextSession;
       setSession(nextSession);
       if (nextSession.playbackMode === "scroll") {
@@ -399,10 +438,7 @@ export function AdminSessionControl() {
       const currentSession = stateRef.current;
       const viewer = viewerRef.current;
       if (currentSession && viewer && currentSession.playbackMode === "scroll") {
-        const cursor = effectiveDocumentCursor(
-          currentSession,
-          currentSession.playing ? Date.now() - (currentSession.positionUpdatedAt ?? Date.now()) : 0
-        );
+        const cursor = canonicalCursorAt(currentSession, canonicalPlaybackRef.current);
         if (currentSession.playing && cursor && currentSession.documentGeometry) {
           viewer.scrollToDocumentCursor(cursor, currentSession.documentGeometry);
           raf = requestAnimationFrame(tick);
@@ -526,7 +562,12 @@ export function AdminSessionControl() {
 
   function sendCanonicalControl(
     intent: "resume" | "pause" | "seek" | "restart" | "stop" | "seek-marker" | "set-speed",
-    extras: { cursor?: { revision: string; yMicroPoints: number }; markerId?: string; velocityPointsPerSecond?: number } = {}
+    extras: {
+      cursor?: { revision: string; yMicroPoints: number };
+      markerId?: string;
+      velocityPointsPerSecond?: number;
+      autoStopCursor?: { revision: string; yMicroPoints: number } | null;
+    } = {}
   ) {
     const current = stateRef.current;
     if (
@@ -561,7 +602,9 @@ export function AdminSessionControl() {
     autoStopEngagedRef.current = false;
 
     if (currentSession.playbackMode === "scroll") {
-      sendCanonicalControl("resume");
+      sendCanonicalControl("resume", {
+        autoStopCursor: getNextAutoStopCursor(currentSession),
+      });
       return;
     } else {
       patchSession({
@@ -790,6 +833,22 @@ export function AdminSessionControl() {
         return;
       }
     }
+  }
+
+  function getNextAutoStopCursor(
+    currentSession: SessionState
+  ): NonNullable<SessionState["documentCursor"]> | null {
+    if (!currentSession.autoStopAtSongEnd || !currentSession.documentGeometry) return null;
+    const viewer = viewerRef.current;
+    const currentCursor = canonicalCursorAt(currentSession, canonicalPlaybackRef.current);
+    if (!viewer || !currentCursor) return null;
+
+    const markers = (currentSession.markers ?? []).slice().sort((a, b) => a.page - b.page);
+    for (const marker of markers) {
+      const target = viewer.getAutoStopCursorBeforePage(marker.page, currentSession.documentGeometry);
+      if (target && target.yMicroPoints > currentCursor.yMicroPoints) return target;
+    }
+    return null;
   }
 
   function setMarkers(markers: SongMarker[]) {
@@ -1364,4 +1423,26 @@ function hasMarkerGenerationCapability(config: AiConfigResponse): boolean {
   if (!config.activeProvider) return false;
   const active = config.configs.find((item) => item.provider === config.activeProvider);
   return Boolean(active?.capabilities.includes("marker-generation"));
+}
+
+function canonicalCursorAt(
+  session: SessionState,
+  base: {
+    cursor: NonNullable<SessionState["documentCursor"]>;
+    velocityPointsPerSecond: number;
+    receivedAt: number;
+  } | null
+): NonNullable<SessionState["documentCursor"]> {
+  if (!base || !session.documentCursor || base.cursor.revision !== session.documentCursor.revision) {
+    return session.documentCursor ?? { revision: "", yMicroPoints: 0 };
+  }
+
+  const elapsedMs = session.playing ? performance.now() - base.receivedAt : 0;
+  return {
+    revision: base.cursor.revision,
+    yMicroPoints: Math.round(
+      base.cursor.yMicroPoints +
+        (elapsedMs * base.velocityPointsPerSecond * MICRO_POINTS_PER_POINT) / 1_000
+    ),
+  };
 }

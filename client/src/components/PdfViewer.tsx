@@ -56,6 +56,7 @@ export type PdfViewerHandle = {
   scrollToAnchor: (anchor: ScrollAnchor) => void;
   scrollToDocumentCursor: (cursor: DocumentCursor, geometry: DocumentGeometry) => void;
   getDocumentCursor: (geometry: DocumentGeometry) => DocumentCursor | null;
+  getAutoStopCursorBeforePage: (page: number, geometry: DocumentGeometry) => DocumentCursor | null;
   findMarkerPage: (title: string, minimumPage?: number, maximumPage?: number) => Promise<number | null>;
   readonly numPages: number;
 };
@@ -181,6 +182,14 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     currentPageAspect,
     chromeFlush
   );
+
+  // Mounted pages are measured at their current responsive width, while
+  // virtualized pages may not be mounted during a layout change. Discard every
+  // cached measurement when the width changes so a fullscreen transition never
+  // combines measurements from different layouts.
+  useEffect(() => {
+    setMeasuredPageHeights((current) => (current.length === 0 ? current : []));
+  }, [displayWidth]);
 
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") return;
@@ -393,11 +402,27 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       scrollToDocumentCursor(cursor: DocumentCursor, geometry: DocumentGeometry) {
         const el = scrollRef.current;
         const top = cursorToScrollTop(cursor, geometry);
-        if (el && top !== null) el.scrollTop = top;
+        if (!el || top === null) return;
+
+        const totalMicroPoints = Math.round(geometry.totalHeightPoints * MICRO_POINTS_PER_POINT);
+        if (cursor.yMicroPoints < totalMicroPoints) {
+          el.scrollTop = top;
+          return;
+        }
+
+        const lastPageTop = pageTopOffsets[pageTopOffsets.length - 1] ?? 0;
+        const lastPageHeight = effectivePageHeights[effectivePageHeights.length - 1] ?? 0;
+        el.scrollTop = Math.max(0, lastPageTop + lastPageHeight - el.clientHeight);
       },
       getDocumentCursor(geometry: DocumentGeometry) {
         const el = scrollRef.current;
         return el ? scrollTopToCursor(el.scrollTop, geometry) : null;
+      },
+      getAutoStopCursorBeforePage(page: number, geometry: DocumentGeometry) {
+        const el = scrollRef.current;
+        const pageTop = pageTopOffsets[page - 1];
+        if (!el || pageTop === undefined) return null;
+        return scrollTopToCursor(Math.max(0, pageTop - el.clientHeight), geometry);
       },
       getProgressForPage,
       getCurrentPage,

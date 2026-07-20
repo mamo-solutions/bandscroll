@@ -11,6 +11,7 @@ export type CanonicalControlCommand = {
   cursor?: DocumentCursor;
   markerId?: string;
   velocityPointsPerSecond?: number;
+  autoStopCursor?: DocumentCursor | null;
 };
 
 export type CanonicalControlResult =
@@ -33,8 +34,15 @@ export function applyCanonicalControl(
   const base: SessionPatch = { documentCursor: cursor, positionUpdatedAt: now, controlVersion };
 
   switch (command.intent) {
-    case "resume":
-      return { patch: { ...base, playing: true, status: "live" } };
+    case "resume": {
+      const autoStopCursor =
+        command.autoStopCursor === null
+          ? null
+          : command.autoStopCursor
+            ? clampDocumentCursor(command.autoStopCursor, geometry) ?? null
+            : null;
+      return { patch: { ...base, autoStopCursor, playing: true, status: "live" } };
+    }
     case "pause":
       return { patch: { ...base, playing: false } };
     case "restart":

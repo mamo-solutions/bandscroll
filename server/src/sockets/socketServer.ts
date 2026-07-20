@@ -22,7 +22,7 @@ import {
   nextPlaybackPatch,
   pageStartProgress,
 } from "../lib/sessionPlayback.js";
-import { cursorAtPageStart, maxCursorMicroPoints, pageForDocumentCursor } from "../lib/documentPosition.js";
+import { maxCursorMicroPoints, pageForDocumentCursor } from "../lib/documentPosition.js";
 import { isAllowedSocketOrigin } from "../security/origin.js";
 import { readSessionDocumentGeometry } from "../ai/documentAnalysis.js";
 import { applyCanonicalControl, type CanonicalControlCommand } from "../lib/sessionControl.js";
@@ -603,16 +603,11 @@ function nextCanonicalAutoStopCursor(
   session: SessionState,
   cursor: NonNullable<SessionState["documentCursor"]>
 ): NonNullable<SessionState["documentCursor"]> | undefined {
-  if (!session.autoStopAtSongEnd || !session.documentGeometry) return undefined;
-
-  let boundary: NonNullable<SessionState["documentCursor"]> | undefined;
-  for (const marker of session.markers) {
-    const markerCursor = cursorAtPageStart(marker.page, session.documentGeometry);
-    if (markerCursor.yMicroPoints <= session.documentCursor!.yMicroPoints) continue;
-    if (markerCursor.yMicroPoints > cursor.yMicroPoints) continue;
-    if (!boundary || markerCursor.yMicroPoints < boundary.yMicroPoints) boundary = markerCursor;
-  }
-  return boundary;
+  const target = session.autoStopCursor;
+  if (!session.autoStopAtSongEnd || !target || !session.documentCursor) return undefined;
+  if (target.revision !== session.documentCursor.revision) return undefined;
+  if (target.yMicroPoints <= session.documentCursor.yMicroPoints) return undefined;
+  return target.yMicroPoints <= cursor.yMicroPoints ? target : undefined;
 }
 
 export function broadcastSessionState(session: SessionState, now = Date.now()): void {
