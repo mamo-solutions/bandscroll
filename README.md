@@ -113,6 +113,40 @@ Open <http://localhost:5173>. The host area is at `/admin` (link in the footer).
 | `npm test` | Run the server and client test suites. |
 | `npm run version:sync` | Advance the committed semver version based on new git history. |
 
+## Load testing
+
+The protocol-aware load runner creates and removes its own session, verifies the
+server runtime manifest, and connects synthetic public Socket.IO viewers. For
+scroll mode, supply a PDF so the server can extract canonical document geometry.
+
+```bash
+ADMIN_PASSWORD='your-admin-password' \
+npm --prefix server run load:test -- \
+  --base-url https://bandscroll.example.com \
+  --clients 300 \
+  --batch-size 15 \
+  --ramp-ms 10000 \
+  --late-join-clients 20 \
+  --late-join-delay-ms 2000 \
+  --duration-ms 60000 \
+  --pdf-path /absolute/path/to/document.pdf \
+  --speed 36
+```
+
+Viewers connect in batches of 15 by default, distributed over `--ramp-ms`. Once
+scroll playback is active, a late wave of up to 20 viewers (or 20% of the total,
+whichever is lower) joins after two seconds. Adjust this with `--batch-size`,
+`--late-join-clients`, and `--late-join-delay-ms`; set late join clients to `0`
+to disable that wave. Late viewers are also batched, with a 250 ms pause between
+batches by default; adjust it with `--late-join-batch-delay-ms`.
+
+The runner validates authoritative snapshots, controller errors, cursor/document
+revisions, sequence ordering, the late viewers' active canonical cursor, a
+controlled viewer reconnect, lease renewal, and the canonical pause, seek,
+marker, restart, resume, and stop controls. It is a server/socket capacity test,
+not a replacement for browser E2E coverage of PDF rendering, animation
+smoothness, fullscreen, or viewport layout.
+
 ## Configuration
 
 All configuration is via the root `.env` (see `.env.example`):
