@@ -1,4 +1,8 @@
-import { effectiveProgressFromElapsed, type SessionState } from "../types/session";
+import {
+  effectiveProgressFromElapsed,
+  type SessionState,
+  type SyncSnapshot,
+} from "../types/session";
 
 export type ViewerConnectionPhase = "syncing" | "connected" | "disconnected";
 
@@ -13,6 +17,23 @@ export function shouldAcceptSessionState(
     nextState.stateVersion > currentVersion ||
     (allowEqualVersion && nextState.stateVersion === currentVersion)
   );
+}
+
+/**
+ * Socket playback snapshots retain the persisted state version between discrete
+ * controls. Their strictly increasing position sequence orders ephemeral cursor
+ * corrections without making playback ticks persistent state changes.
+ */
+export function shouldAcceptSyncSnapshot(
+  currentVersion: number,
+  currentPositionSequence: number | null,
+  nextSnapshot: SyncSnapshot,
+  allowSequenceReset = false
+): boolean {
+  if (nextSnapshot.stateVersion > currentVersion) return true;
+  if (nextSnapshot.stateVersion < currentVersion) return false;
+  if (allowSequenceReset || currentPositionSequence === null) return true;
+  return nextSnapshot.positionSequence > currentPositionSequence;
 }
 
 export function shouldSnapToSessionState(

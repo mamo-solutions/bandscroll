@@ -57,6 +57,12 @@ export type SessionState = {
   controlVersion?: number;
 };
 
+/** Ephemeral server-to-client synchronization message. */
+export type SyncSnapshot = SessionState & {
+  positionSequence: number;
+  serverTimestamp: number;
+};
+
 export const MICRO_POINTS_PER_POINT = 1_000;
 
 export function effectiveDocumentCursor(

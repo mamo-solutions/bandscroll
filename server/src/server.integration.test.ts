@@ -17,6 +17,7 @@ import { resetAiConfigRateLimitState } from "./security/aiConfigRateLimit.js";
 import { resetMarkerGenerationRateLimitState } from "./security/markerGenerationRateLimit.js";
 import { getIo } from "./sockets/socketServer.js";
 import { RUNTIME_MANIFEST } from "./runtimeManifest.js";
+import type { SyncSnapshot } from "./types.js";
 
 let httpServer: HttpServer;
 let base: string;
@@ -1181,6 +1182,49 @@ describe("Socket.IO sync", () => {
     const state = await once<any>(viewer, "session-state");
     expect(state.code).toBe(body.code);
     expect(typeof state.stateVersion).toBe("number");
+    viewer.close();
+  });
+
+  it("emits advancing ephemeral canonical scroll snapshots without changing state version", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Canonical playback snapshots");
+    const form = new FormData();
+    form.append("pdf", new Blob([makePdfBytes()], { type: "application/pdf" }), "song.pdf");
+    const upload = await fetch(`${base}/api/admin/sessions/${body.id}/pdf`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+      body: form,
+    });
+    expect(upload.status).toBe(200);
+
+    const viewer = await connect();
+    viewer.emit("join-session", body.code);
+    await once<SyncSnapshot>(viewer, "session-state");
+
+    const start = await fetch(`${base}/api/admin/sessions/${body.id}/start`, {
+      method: "POST",
+      headers: adminHeaders(cookie),
+    });
+    expect(start.status).toBe(200);
+
+    const first = await waitForState(
+      viewer,
+      (state: SyncSnapshot) => state.playing && state.documentCursor !== undefined
+    ) as SyncSnapshot;
+    const second = await waitForState(
+      viewer,
+      (state: SyncSnapshot) =>
+        state.playing &&
+        state.stateVersion === first.stateVersion &&
+        state.positionSequence > first.positionSequence &&
+        (state.documentCursor?.yMicroPoints ?? 0) > (first.documentCursor?.yMicroPoints ?? 0)
+    ) as SyncSnapshot;
+
+    expect(second.stateVersion).toBe(first.stateVersion);
+    expect(second.positionSequence).toBeGreaterThan(first.positionSequence);
+    expect(second.documentCursor?.yMicroPoints).toBeGreaterThan(
+      first.documentCursor?.yMicroPoints ?? 0
+    );
     viewer.close();
   });
 

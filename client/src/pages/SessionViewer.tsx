@@ -19,6 +19,7 @@ import { getPlaybackDisplayProgress } from "@/lib/playback";
 import {
   shouldRefreshPlaybackOffset,
   shouldAcceptSessionState,
+  shouldAcceptSyncSnapshot,
   shouldSnapToScrollAnchor,
   shouldSnapToSessionState,
   type ViewerConnectionPhase,
@@ -29,7 +30,14 @@ import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
 import { isSyncDebugEnabled, recordSyncSnapshot } from "@/lib/syncDebug";
 import { SyncDebugPanel } from "@/components/SyncDebugPanel";
-import { MICRO_POINTS_PER_POINT, effectiveDocumentCursor, effectiveProgressFromElapsed, type DocumentCursor, type SessionState } from "@/types/session";
+import {
+  MICRO_POINTS_PER_POINT,
+  effectiveDocumentCursor,
+  effectiveProgressFromElapsed,
+  type DocumentCursor,
+  type SessionState,
+  type SyncSnapshot,
+} from "@/types/session";
 
 export function SessionViewer() {
   const { code = "" } = useParams();
@@ -51,6 +59,7 @@ export function SessionViewer() {
   const receivedAtRef = useRef(Date.now());
   const numPagesRef = useRef(0);
   const lastStateVersionRef = useRef(-1);
+  const lastPositionSequenceRef = useRef<number | null>(null);
   const hasEverConnectedLiveRef = useRef(false);
   const awaitingSocketSnapshotRef = useRef(false);
   const anchorProgressRef = useRef<number | null>(null);
@@ -134,12 +143,16 @@ export function SessionViewer() {
 
   useEffect(() => {
     const socket = getSocket();
+    let active = true;
+    lastStateVersionRef.current = -1;
+    lastPositionSequenceRef.current = null;
 
-    const onState = (nextSession: SessionState) => {
+    const onState = (nextSession: SyncSnapshot) => {
       if (nextSession.code !== code) return;
       if (
-        !shouldAcceptSessionState(
+        !shouldAcceptSyncSnapshot(
           lastStateVersionRef.current,
+          lastPositionSequenceRef.current,
           nextSession,
           awaitingSocketSnapshotRef.current
         )
@@ -152,6 +165,7 @@ export function SessionViewer() {
       const receivedAt = performance.now();
       receivedAtRef.current = Date.now();
       lastStateVersionRef.current = nextSession.stateVersion;
+      lastPositionSequenceRef.current = nextSession.positionSequence;
       hasEverConnectedLiveRef.current = true;
       awaitingSocketSnapshotRef.current = false;
       forceCanonicalResyncRef.current = false;
@@ -251,6 +265,7 @@ export function SessionViewer() {
     api
       .sessionByCode(code)
       .then((nextSession) => {
+        if (!active) return;
         if (!shouldAcceptSessionState(lastStateVersionRef.current, nextSession)) return;
         receivedAtRef.current = Date.now();
         lastStateVersionRef.current = nextSession.stateVersion;
@@ -263,6 +278,7 @@ export function SessionViewer() {
       .catch(() => setNotFound(true));
 
     return () => {
+      active = false;
       socket.emit("leave-session");
       socket.off("session-state", onState);
       socket.off("session-ended", onEnded);

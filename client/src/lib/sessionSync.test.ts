@@ -3,9 +3,11 @@ import type { SessionState } from "@/types/session";
 import {
   shouldRefreshPlaybackOffset,
   shouldAcceptSessionState,
+  shouldAcceptSyncSnapshot,
   shouldSnapToScrollAnchor,
   shouldSnapToSessionState,
 } from "./sessionSync";
+import type { SyncSnapshot } from "@/types/session";
 
 function makeState(overrides: Partial<SessionState> = {}): SessionState {
   return {
@@ -41,6 +43,34 @@ describe("shouldAcceptSessionState", () => {
 
   it("allows an equal version only for the awaited first socket snapshot", () => {
     expect(shouldAcceptSessionState(1, makeState({ stateVersion: 1 }), true)).toBe(true);
+  });
+});
+
+describe("shouldAcceptSyncSnapshot", () => {
+  const snapshot = (overrides: Partial<SyncSnapshot> = {}): SyncSnapshot => ({
+    ...makeState(),
+    positionSequence: 10,
+    serverTimestamp: 1_000,
+    ...overrides,
+  });
+
+  it("accepts an ephemeral playback correction with an unchanged state version", () => {
+    expect(shouldAcceptSyncSnapshot(1, 10, snapshot({ positionSequence: 11 }))).toBe(true);
+  });
+
+  it("rejects duplicate and stale playback sequences", () => {
+    expect(shouldAcceptSyncSnapshot(1, 10, snapshot({ positionSequence: 10 }))).toBe(false);
+    expect(shouldAcceptSyncSnapshot(1, 10, snapshot({ positionSequence: 9 }))).toBe(false);
+  });
+
+  it("continues to reject an older persisted state even when its sequence is higher", () => {
+    expect(
+      shouldAcceptSyncSnapshot(2, 10, snapshot({ stateVersion: 1, positionSequence: 11 }))
+    ).toBe(false);
+  });
+
+  it("accepts the first awaited snapshot after a server sequence reset", () => {
+    expect(shouldAcceptSyncSnapshot(1, 10, snapshot({ positionSequence: 1 }), true)).toBe(true);
   });
 });
 
