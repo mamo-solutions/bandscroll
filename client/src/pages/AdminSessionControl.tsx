@@ -58,6 +58,8 @@ import {
 } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
+import { isSyncDebugEnabled, recordSyncSnapshot } from "@/lib/syncDebug";
+import { SyncDebugPanel } from "@/components/SyncDebugPanel";
 import type {
   AiConfigResponse,
   MarkerGenerationSocketEvent,
@@ -265,6 +267,7 @@ export function AdminSessionControl() {
         const predicted = canonicalCursorAt(nextSession, previousPlayback);
         const drift = Math.abs(predicted.yMicroPoints - nextSession.documentCursor.yMicroPoints);
         const mustSnap = !previousPlayback || controlChanged || !nextSession.playing || drift > 20_000;
+        recordSyncSnapshot(nextSession, drift, mustSnap ? "snap" : "bounded");
         canonicalPlaybackRef.current = {
           cursor: mustSnap
             ? nextSession.documentCursor
@@ -280,6 +283,7 @@ export function AdminSessionControl() {
         };
       } else {
         canonicalPlaybackRef.current = null;
+        recordSyncSnapshot(nextSession, null, nextSession.playbackMode === "page" ? "snap" : "none");
       }
       stateRef.current = nextSession;
       setSession(nextSession);
@@ -1415,6 +1419,7 @@ export function AdminSessionControl() {
           <Maximize className="size-5" />
         </button>
       )}
+      {isSyncDebugEnabled() && <SyncDebugPanel admin />}
     </main>
   );
 }

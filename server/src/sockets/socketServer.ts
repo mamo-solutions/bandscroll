@@ -42,6 +42,10 @@ const controllerBySession = new Map<string, { socketId: string; expiresAt: numbe
 const CONTROLLER_LEASE_MS = 15_000;
 const ADMIN_ROOM = "admins";
 
+export type DebugPingResponse = {
+  serverReceivedAt: number;
+};
+
 function roomFor(code: string): string {
   return `session:${code}`;
 }
@@ -322,6 +326,13 @@ export function initSocketServer(
         getSessionById(String(codeOrId ?? ""));
       if (session) emitSessionState(socket, session);
       else socket.emit("session-not-found", { code: codeOrId });
+    });
+
+    // Deliberately independent of session membership and controller state so
+    // diagnostics can measure transport RTT without touching synchronization.
+    socket.on("debug-ping", (acknowledge: (response: DebugPingResponse) => void) => {
+      metrics.recordSocketEvent("debug-ping");
+      acknowledge({ serverReceivedAt: Date.now() });
     });
 
     // ---- Admin events (server-side authenticated) ----

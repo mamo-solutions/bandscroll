@@ -11,6 +11,17 @@ import type {
   MarkerSuggestionSet,
 } from "../types/ai";
 
+export type MetricsSnapshot = {
+  uptimeSec: number;
+  memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
+  activeSockets: number;
+  totalSessions: number;
+  connectedClients: number;
+  http: { totalRequests: number; errors5xx: number; avgLatencyMs: number; maxLatencyMs: number; requestsPerSec: number };
+  socket: { totalEvents: number; eventsPerSec: number; requestSessionStateEvents: number; requestSessionStatePerSec: number; sessionStateBroadcasts: number };
+  playback: { activeLiveSessions: number };
+};
+
 // Same-origin requests; credentials:include carries the admin session cookie.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -60,6 +71,7 @@ export const api = {
   adminSessions: () => request<SessionState[]>("/api/admin/sessions"),
   adminSession: (id: string) =>
     request<SessionState>(`/api/admin/sessions/${id}`),
+  adminMetrics: () => request<MetricsSnapshot>("/api/admin/metrics"),
   createSession: (data: {
     title: string;
     description?: string;

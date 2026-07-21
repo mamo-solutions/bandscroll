@@ -11,7 +11,7 @@ import { resetAiConnectorOverrides, setAiConnectorOverride } from "./ai/connecto
 import { getAiConfigStore, resetAiConfigStoreForTests } from "./ai/aiConfigStore.js";
 import { resetMarkerSuggestionStoreForTests, getMarkerSuggestionStore } from "./ai/markerSuggestionStore.js";
 import { env } from "./env.js";
-import { clearSessionStore } from "./sessionStore.js";
+import { clearSessionStore, getSessionById } from "./sessionStore.js";
 import { resetLoginRateLimitState } from "./security/loginRateLimit.js";
 import { resetAiConfigRateLimitState } from "./security/aiConfigRateLimit.js";
 import { resetMarkerGenerationRateLimitState } from "./security/markerGenerationRateLimit.js";
@@ -1157,6 +1157,21 @@ describe("REST API", () => {
 
 // ---- Socket auth gating + sync ----
 describe("Socket.IO sync", () => {
+  it("acknowledges public debug pings without changing session state", async () => {
+    const cookie = await login();
+    const { body } = await createSession(cookie, "Diagnostic ping");
+    const before = structuredClone(getSessionById(body.id));
+    const viewer = await connect();
+    const requestedAt = Date.now();
+
+    const response = await viewer.emitWithAck<{ serverReceivedAt: number }>("debug-ping");
+
+    expect(response.serverReceivedAt).toBeGreaterThanOrEqual(requestedAt);
+    expect(response.serverReceivedAt).toBeLessThanOrEqual(Date.now());
+    expect(getSessionById(body.id)).toEqual(before);
+    viewer.close();
+  });
+
   it("a viewer joins a room and receives session-state", async () => {
     const cookie = await login();
     const { body } = await createSession(cookie, "Joinable");

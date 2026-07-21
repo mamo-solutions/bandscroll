@@ -27,6 +27,8 @@ import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { cn } from "@/lib/utils";
 import { getSocket, useSocketStatus } from "@/sockets/socket";
+import { isSyncDebugEnabled, recordSyncSnapshot } from "@/lib/syncDebug";
+import { SyncDebugPanel } from "@/components/SyncDebugPanel";
 import { MICRO_POINTS_PER_POINT, effectiveDocumentCursor, effectiveProgressFromElapsed, type DocumentCursor, type SessionState } from "@/types/session";
 
 export function SessionViewer() {
@@ -168,6 +170,7 @@ export function SessionViewer() {
           const predicted = canonicalCursorAt(nextSession, canonicalPlaybackRef.current);
           const drift = Math.abs(predicted.yMicroPoints - nextSession.documentCursor.yMicroPoints);
           const mustSnap = !canonicalPlaybackRef.current || controlChanged || !nextSession.playing || forceResync || drift > 20_000;
+          recordSyncSnapshot(nextSession, drift, mustSnap ? "snap" : "bounded");
           if (mustSnap) {
             canonicalPlaybackRef.current = {
               cursor: nextSession.documentCursor,
@@ -192,6 +195,7 @@ export function SessionViewer() {
           }
           return;
         }
+        recordSyncSnapshot(nextSession, null, "none");
         if (nextSession.scrollAnchor && viewerRef.current) {
           const localProgress = viewerRef.current.getProgressForAnchor(nextSession.scrollAnchor);
           const anchorChanged =
@@ -229,6 +233,7 @@ export function SessionViewer() {
           setUiProgress(nextSession.progress);
         }
       } else {
+        recordSyncSnapshot(nextSession, null, "snap");
         viewerRef.current?.scrollToPage(nextSession.currentPage);
         syncUiFromState(nextSession);
       }
@@ -610,6 +615,7 @@ export function SessionViewer() {
           <Maximize className="size-5" />
         </button>
       )}
+      {isSyncDebugEnabled() && <SyncDebugPanel />}
     </main>
   );
 }

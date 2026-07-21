@@ -3,6 +3,7 @@ import { io, type Socket } from "socket.io-client";
 import { reportError } from "@/lib/errorLog";
 import { reloadForRuntimeUpdate, SYNC_PROTOCOL } from "@/lib/runtimeCompatibility";
 import { APP_VERSION } from "@/version";
+import { recordSocketDebugEvent } from "@/lib/syncDebug";
 
 // Single shared socket connection (same origin; cookie sent automatically).
 let socket: Socket | null = null;
@@ -47,6 +48,7 @@ function installSocketLogging(s: Socket): void {
       hasEverConnected: true,
       disconnectReason: null,
     });
+    recordSocketDebugEvent({ connected: true, transport: s.io.engine.transport.name, error: null });
   });
   s.on("disconnect", (reason: string) => {
     console.debug("[BandScroll:socket] disconnected", reason);
@@ -55,6 +57,7 @@ function installSocketLogging(s: Socket): void {
       connected: false,
       disconnectReason: reason,
     });
+    recordSocketDebugEvent({ connected: false, error: reason });
     // A client-initiated disconnect (logout/reconnect) is expected — skip it.
     if (reason !== "io client disconnect") {
       reportError("socket.disconnect", reason);
@@ -65,6 +68,7 @@ function installSocketLogging(s: Socket): void {
       state: "disconnected",
       connected: s.connected,
     });
+    recordSocketDebugEvent({ connected: false, error: err.message });
     if (err.message === "client-update-required") {
       const runtimeError = err as Error & { data?: { buildId?: unknown } };
       const targetBuildId =
@@ -82,10 +86,17 @@ function installSocketLogging(s: Socket): void {
       state: "connecting",
       connected: false,
     });
+    recordSocketDebugEvent({ connected: false, reconnectAttempts: n });
   });
-  s.io.on("reconnect", (n) =>
-    console.debug("[BandScroll:socket] reconnected after", n, "attempts")
-  );
+  s.io.on("reconnect", (n) => {
+    console.debug("[BandScroll:socket] reconnected after", n, "attempts");
+    recordSocketDebugEvent({
+      connected: true,
+      transport: s.io.engine.transport.name,
+      reconnectAttempts: n,
+      error: null,
+    });
+  });
 }
 
 function ensureSocketConnected(s: Socket): void {
