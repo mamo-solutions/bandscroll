@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { MICRO_POINTS_PER_POINT, type SessionState } from "@/types/session";
 
 export type SyncCorrection = "snap" | "bounded" | "none";
+export type DebugSeverity = "normal" | "warning" | "danger";
 
 export type SyncDebugSnapshot = {
   connected: boolean;
@@ -65,6 +66,37 @@ export function useSyncDebugSnapshot(): SyncDebugSnapshot {
 
 export function formatDebugNumber(value: number | null, digits = 0): string {
   return value === null || !Number.isFinite(value) ? "—" : value.toFixed(digits);
+}
+
+export function rttSeverity(rttMs: number | null): DebugSeverity {
+  if (rttMs === null || rttMs <= 150) return "normal";
+  return rttMs >= 500 ? "danger" : "warning";
+}
+
+export function snapshotAgeSeverity(ageMs: number | null, playing: boolean | null): DebugSeverity {
+  if (ageMs === null || !playing || ageMs <= 1_500) return "normal";
+  return ageMs >= 4_000 ? "danger" : "warning";
+}
+
+export function snapshotIntervalSeverity(
+  intervalMs: number | null,
+  playing: boolean | null
+): DebugSeverity {
+  if (intervalMs === null || !playing || intervalMs <= 1_000) return "normal";
+  return intervalMs >= 3_000 ? "danger" : "warning";
+}
+
+export function driftSeverity(
+  driftPoints: number | null,
+  correction: SyncCorrection
+): DebugSeverity {
+  if (driftPoints === null || correction === "snap" || driftPoints < 20) return "normal";
+  return driftPoints >= 100 ? "danger" : "warning";
+}
+
+export function httpLatencySeverity(latencyMs: number | null): DebugSeverity {
+  if (latencyMs === null || latencyMs <= 200) return "normal";
+  return latencyMs >= 1_000 ? "danger" : "warning";
 }
 
 export function resetSyncDebugForTests(): void { snapshot = initialSnapshot; }
