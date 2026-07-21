@@ -72,7 +72,7 @@ function determineBump(commits) {
     }
 
     if (/^feat(\(.+\))?:/i.test(subject) || /^(add|introduce)\b/i.test(subject)) {
-      bump = bump ?? "minor";
+      bump = "minor";
       continue;
     }
 
