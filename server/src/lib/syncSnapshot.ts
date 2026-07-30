@@ -28,6 +28,10 @@ export function createSyncSnapshot(
   positionSequence: number,
   now = Date.now()
 ): SyncSnapshot {
+  if (session.playbackMode === "page") {
+    return { ...session, positionSequence, serverTimestamp: now };
+  }
+
   const cursor = materializeDocumentCursor(session, now);
   if (!cursor || !session.documentGeometry) {
     return { ...session, positionSequence, serverTimestamp: now };
