@@ -516,7 +516,7 @@ export function initSocketServer(
 
     socket.on(
       "admin-set-page",
-      (payload: { sessionId: string; page: number }) => {
+      (payload: { sessionId: string; page: number; playing?: boolean }) => {
         if (!guardAdmin("admin-set-page")) return;
         const currentPage = clampCurrentPage(Number(payload?.page));
         const session = getSessionById(String(payload?.sessionId));
@@ -525,12 +525,17 @@ export function initSocketServer(
           session.numPages > 0
             ? pageStartProgress(currentPage, session.numPages)
             : session.progress;
-        adminUpdate(String(payload?.sessionId), { currentPage, progress });
+        adminUpdate(String(payload?.sessionId), {
+          currentPage,
+          progress,
+          ...(payload?.playing === undefined ? {} : { playing: Boolean(payload.playing) }),
+        });
         log.info("admin set-page", {
           id: socket.id,
           sessionId: String(payload?.sessionId),
           currentPage,
           progress,
+          playing: payload?.playing,
         });
       }
     );

@@ -1372,9 +1372,15 @@ describe("Socket.IO sync", () => {
     const paged = await waitForState(viewer, (s) => s.playbackMode === "page");
     expect(paged.currentPage).toBe(2);
 
-    admin.emit("admin-set-page", { sessionId: body.id, page: 3 });
-    const jumped = await waitForState(viewer, (s) => s.currentPage === 3);
-    expect(jumped.playbackMode).toBe("page");
+    const playing = waitForState(viewer, (s) => s.playing === true);
+    admin.emit("admin-play", { sessionId: body.id });
+    await playing;
+
+    const jumped = waitForState(viewer, (s) => s.currentPage === 3 && s.playing === false);
+    admin.emit("admin-set-page", { sessionId: body.id, page: 3, playing: false });
+    const jumpedState = await jumped;
+    expect(jumpedState.playbackMode).toBe("page");
+    expect(jumpedState.playing).toBe(false);
 
     viewer.close();
     admin.close();

@@ -701,17 +701,17 @@ export function AdminSessionControl() {
     }
   }
 
-  function goToPage(page: number) {
+  function goToPage(page: number, options: { pause?: boolean } = {}) {
     const currentSession = stateRef.current;
     if (!currentSession) return;
 
     const nextPage = clampPage(page, Math.max(numPages, 1));
     viewerRef.current?.scrollToPage(nextPage);
-    patchSession({ currentPage: nextPage });
+    patchSession({ currentPage: nextPage, ...(options.pause ? { playing: false } : {}) });
     setUiProgress(
       getPlaybackDisplayProgress(currentSession.playbackMode, currentSession.progress, nextPage, numPages)
     );
-    socket.emit("admin-set-page", { sessionId: id, page: nextPage });
+    socket.emit("admin-set-page", { sessionId: id, page: nextPage, ...(options.pause ? { playing: false } : {}) });
   }
 
   function setSpeed(speed: number, opts: { persistToMarker?: boolean } = {}) {
@@ -933,8 +933,7 @@ export function AdminSessionControl() {
         );
         setMarkers(nextMarkers);
       }
-      goToPage(page);
-      pause();
+      goToPage(page, { pause: true });
       return;
     }
     const scrollAnchor = { page, fraction: 0 };
